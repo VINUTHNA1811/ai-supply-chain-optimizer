@@ -1,6 +1,14 @@
+<<<<<<< HEAD
 Flask==3.0.0
 numpy==1.24.3
 scikit-learn==1.3.2
 Werkzeug==3.0.1
 pandas==2.0.3
+=======
+Flask==3.0.0
+numpy==1.24.3
+scikit-learn==1.3.2
+Werkzeug==3.0.1
+pandas==2.0.3
+>>>>>>> 011c085f82d7e4b106e5702fe0b9db02cb8b4e2c
 scipy==1.11.4
