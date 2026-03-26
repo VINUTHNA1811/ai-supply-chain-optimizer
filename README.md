@@ -25,5 +25,8 @@ This project is an AI-based system that helps businesses manage inventory effici
 
 ## Status
 Working prototype completed. Currently improving features and scalability.
-## Update
 Started implementation phase and core logic improvements.
+
+## Progress Update
+- Planned enhancements and divided tasks for team collaboration
+
