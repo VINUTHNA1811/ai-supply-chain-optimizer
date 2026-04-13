@@ -628,11 +628,10 @@ def calculate_eoq(product_id):
     
     unit_cost = result[0]
     forecast = DemandForecaster.calculate_forecast(product_id)
-
     if forecast and forecast.get("avg_daily_demand", 0) > 0:
         annual_demand = forecast["avg_daily_demand"] * 365
     else:
-        annual_demand = 1000  # Simulated - should use actual forecast
+        annual_demand = 1000  # fallback if forecast data unavailable
     ordering_cost = 50
     holding_cost = unit_cost * 0.25
     
@@ -1025,9 +1024,6 @@ perfIndicator=`
 }
 
 let forecastChart='';
-if(!forecast.forecast || forecast.forecast.length===0){
-forecastChart=`<div class="forecast-section"><div class="forecast-header">🤖 ML-Powered 30-Day Demand Forecast</div><div style="background:#fff3cd;padding:1rem;border-radius:6px;border-left:3px solid #f39c12;margin:1rem 0"><strong>⚠️ Insufficient Data:</strong> This product needs at least 14 days of demand history for ML forecasting. The background monitor adds demand data every 30 seconds — check back soon.</div></div>`;
-}
 if(forecast.forecast && forecast.forecast.length>0){
 const dates=forecast.forecast.map(f=>f.date);
 const demands=forecast.forecast.map(f=>f.forecasted_demand);
@@ -1083,9 +1079,6 @@ ${perfIndicator}
 }
 
 let reorderInfo='';
-if(reorder && reorder.error){
-reorderInfo=`<div class="forecast-section"><div class="forecast-header">💡 AI-Powered Reorder Recommendation</div><div style="background:#fff3cd;padding:1rem;border-radius:6px;border-left:3px solid #f39c12;margin:1rem 0"><strong>⚠️ Note:</strong> ${reorder.error} — The system needs more demand history to generate ML forecasts. Auto-reorder still works using default estimates.</div></div>`;
-}
 if(reorder && !reorder.error){
 reorderInfo=`
 <div class="forecast-section">
@@ -1114,14 +1107,6 @@ reorderInfo=`
 <div class="info-item">
 <div class="info-label">Forecast Confidence</div>
 <div class="info-value">${reorder.forecast_confidence}%</div>
-</div>
-<div class="info-item" style="border-left-color:${reorder.inventory_risk_score>85?'#c0392b':reorder.inventory_risk_score>60?'#e74c3c':reorder.inventory_risk_score>30?'#f39c12':'#27ae60'}">
-<div class="info-label">🎯 Inventory Risk Score</div>
-<div class="info-value" style="font-size:1.5rem;color:${reorder.inventory_risk_score>85?'#c0392b':reorder.inventory_risk_score>60?'#e74c3c':reorder.inventory_risk_score>30?'#f39c12':'#27ae60'}">${reorder.inventory_risk_score}/100</div>
-</div>
-<div class="info-item">
-<div class="info-label">Decision Mode</div>
-<div class="info-value" style="text-transform:uppercase;color:${reorder.decision_mode==='conservative'?'#e74c3c':reorder.decision_mode==='aggressive'?'#27ae60':'#3498db'}">${reorder.decision_mode}</div>
 </div>
 </div>
 <div style="background:#e8f5e9;padding:1rem;border-radius:6px;border-left:3px solid #27ae60;margin-top:1rem">
@@ -1875,7 +1860,7 @@ if __name__ == '__main__':
     print("   ✓ Enhanced error handling")
     print("\n⚡ Background monitoring active (30s interval)")
     print("=" * 80)
+    print("\n🎯 READY FOR E-SUMMIT 2025!")
     print("=" * 80)
-
-if __name__ == "__main__":
-    app.run(debug=True)
+    
+    app.run(debug=True, use_reloader=False, host='0.0.0.0', port=5000)
