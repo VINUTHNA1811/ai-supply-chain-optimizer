@@ -559,30 +559,46 @@ def background_monitor():
             time.sleep(30)
 
 def simulate_daily_demand():
-    """Simulate demand to generate ongoing data"""
+    """Simulate realistic demand based on category + trend + controlled variation"""
     conn = get_db()
     c = conn.cursor()
     
-    c.execute('SELECT id FROM products')
-    product_ids = [row[0] for row in c.fetchall()]
+    c.execute('SELECT id, category FROM products')
+    products = c.fetchall()
     
     today = datetime.now().date()
     
-    for product_id in product_ids:
-        # Check if today's demand already exists
+    for product_id, category in products:
         c.execute('SELECT id FROM demand_history WHERE product_id = ? AND demand_date = ?', 
                  (product_id, today))
+        
         if not c.fetchone():
-            base_demand = random.randint(5, 20)
+            category = category.lower()
+
+            if category == 'electronics':
+                base_demand = 14
+            elif category == 'furniture':
+                base_demand = 5
+            elif category == 'supplies':
+                base_demand = 20
+            else:
+                base_demand = 12
             
-            # Weekday boost
+            
+            # Weekday vs weekend
             if datetime.now().weekday() < 5:
-                base_demand = int(base_demand * 1.3)
+                base_demand *= 1.2
+            else:
+                base_demand *= 0.8
             
-            demand = max(0, base_demand + random.randint(-5, 5))
+            # Small controlled variation (±2 only)
+            demand = int(base_demand + random.randint(-2, 2))
+            demand = max(0, demand)
             
-            c.execute('INSERT INTO demand_history (product_id, demand_quantity, demand_date) VALUES (?, ?, ?)',
-                     (product_id, demand, today))
+            c.execute(
+                'INSERT INTO demand_history (product_id, demand_quantity, demand_date) VALUES (?, ?, ?)',
+                (product_id, demand, today)
+            )
     
     conn.commit()
     conn.close()
