@@ -84,7 +84,7 @@ def init_db():
         source TEXT DEFAULT 'sales',
         FOREIGN KEY (product_id) REFERENCES products(id))''')
     
-    # NEW: Forecast accuracy tracking table
+    # Forecast accuracy tracking table
     c.execute('''CREATE TABLE IF NOT EXISTS forecast_accuracy (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         product_id INTEGER,
@@ -100,6 +100,8 @@ def init_db():
     # Insert sample data if empty
     c.execute('SELECT COUNT(*) FROM products')
     if c.fetchone()[0] == 0:
+        print("📦 Initializing database with sample data...")
+        
         products = [
             ('Laptop', 'Electronics', 45, 50, 800),
             ('Office Chair', 'Furniture', 30, 40, 150),
@@ -128,23 +130,38 @@ def init_db():
                      (pid, stock, stock, 'initial'))
         
         # Generate 90 days of historical demand data
-        c.execute('SELECT id FROM products')
-        product_ids = [row[0] for row in c.fetchall()]
+        print("📊 Generating 90 days of historical demand data...")
+        c.execute('SELECT id, category FROM products')
+        products_data = c.fetchall()
         
-        for product_id in product_ids:
+        for product_id, category in products_data:
             for days_ago in range(90, 0, -1):
                 demand_date = (datetime.now() - timedelta(days=days_ago)).date()
-                base_demand = random.randint(5, 20)
+                
+                # Category-based base demand
+                if category == 'Electronics':
+                    base_demand = random.randint(10, 18)
+                elif category == 'Furniture':
+                    base_demand = random.randint(3, 8)
+                elif category == 'Supplies':
+                    base_demand = random.randint(15, 25)
+                else:
+                    base_demand = random.randint(8, 15)
                 
                 # Weekday boost
                 if demand_date.weekday() < 5:
                     base_demand = int(base_demand * 1.3)
+                else:
+                    base_demand = int(base_demand * 0.7)
                 
-                # Add randomness
-                demand = max(0, base_demand + random.randint(-5, 5))
+                # Add controlled randomness (±15%)
+                variation = int(base_demand * 0.15)
+                demand = max(0, base_demand + random.randint(-variation, variation))
                 
                 c.execute('INSERT INTO demand_history (product_id, demand_quantity, demand_date) VALUES (?, ?, ?)',
                          (product_id, demand, demand_date))
+        
+        print("✅ Database initialized successfully!")
     
     conn.commit()
     conn.close()
@@ -153,21 +170,26 @@ class DemandForecaster:
     @staticmethod
     def calculate_forecast(product_id, days_ahead=30):
         """
-        Enhanced forecast with confidence intervals and error tracking
-        Returns forecast with upper/lower bounds for uncertainty visualization
+        Enhanced forecast with smart model selection:
+        - Polynomial Regression
+        - Linear Regression
+        - Moving Average (MA7)
+
+        Automatically selects the model with lowest MAPE.
         """
+
         conn = get_db()
         c = conn.cursor()
-        
+
         c.execute('''SELECT demand_quantity, demand_date 
                     FROM demand_history 
                     WHERE product_id = ? 
                     ORDER BY demand_date ASC''', (product_id,))
-        
+
         history = c.fetchall()
         conn.close()
-        
-        if len(history) < 14:
+
+        if len(history) < 7:
             return {
                 "forecast": [],
                 "avg_daily_demand": 0,
@@ -176,8 +198,9 @@ class DemandForecaster:
                 "model_type": "none",
                 "reliability_score": 0
             }
-        
+
         quantities = np.array([float(row[0]) for row in history])
+
         dates = []
         for row in history:
             date_val = row[1]
@@ -185,109 +208,228 @@ class DemandForecaster:
                 dates.append(datetime.strptime(date_val, '%Y-%m-%d').date())
             else:
                 dates.append(date_val)
-        
+
         X = np.array([(date - dates[0]).days for date in dates]).reshape(-1, 1)
         y = quantities
-        
-        # Try polynomial regression first
-        try:
-            poly = PolynomialFeatures(degree=2)
-            X_poly = poly.fit_transform(X)
-            
-            model = LinearRegression()
-            model.fit(X_poly, y)
-            
-            # Calculate residuals for prediction intervals
-            predictions = model.predict(X_poly)
-            residuals = y - predictions
-            std_error = np.std(residuals)
-            
-            r2_score = model.score(X_poly, y)
-            confidence = max(0, min(100, r2_score * 100))
+
+        # ---------------------------------------------------------
+        # Fallback for small datasets
+        # ---------------------------------------------------------
+        if len(y) < 14:
+            moving_avg = np.mean(y[-7:]) if len(y) >= 7 else np.mean(y)
+
+            forecast_data = []
+            current_date = datetime.now().date()
+
+            std_error = np.std(y) if len(y) > 1 else 1
+            confidence = 50
+            model_type = "moving_average"
+
+            for day in range(1, days_ahead + 1):
+                forecast_date = current_date + timedelta(days=day)
+
+                if forecast_date.weekday() < 5:
+                    daily_forecast = moving_avg * 1.15
+                else:
+                    daily_forecast = moving_avg * 0.85
+
+                margin = 1.28 * std_error
+
+                forecast_data.append({
+                    "date": forecast_date.strftime("%Y-%m-%d"),
+                    "forecasted_demand": round(float(daily_forecast), 1),
+                    "lower_bound": round(max(0, daily_forecast - margin), 1),
+                    "upper_bound": round(daily_forecast + margin, 1),
+                    "confidence": round(float(confidence), 1)
+                })
+
+            avg_daily_demand = np.mean(y[-14:]) if len(y) >= 14 else np.mean(y)
+            ma_7 = np.mean(y[-7:]) if len(y) >= 7 else avg_daily_demand
+            ma_30 = np.mean(y[-30:]) if len(y) >= 30 else avg_daily_demand
+
+            return {
+                "forecast": forecast_data,
+                "avg_daily_demand": round(float(avg_daily_demand), 2),
+                "trend": "stable",
+                "trend_strength": 0,
+                "confidence": round(float(confidence), 1),
+                "ma_7": round(float(ma_7), 2),
+                "ma_30": round(float(ma_30), 2),
+                "model_type": model_type,
+                "r2_score": 0,
+                "std_error": round(float(std_error), 2),
+                "reliability_score": 50,
+                "mape": None,
+                "prediction_interval": "80%"
+            }
+
+        # ---------------------------------------------------------
+        # Train Polynomial Model
+        # ---------------------------------------------------------
+        poly = PolynomialFeatures(degree=2)
+        X_poly = poly.fit_transform(X)
+
+        poly_model = LinearRegression()
+        poly_model.fit(X_poly, y)
+
+        poly_predictions = poly_model.predict(X_poly)
+
+        poly_mape = np.mean(
+            np.abs((y - poly_predictions) / np.maximum(y, 1))
+        ) * 100
+
+        poly_r2 = poly_model.score(X_poly, y)
+
+        # ---------------------------------------------------------
+        # Train Linear Model
+        # ---------------------------------------------------------
+        linear_model = LinearRegression()
+        linear_model.fit(X, y)
+
+        linear_predictions = linear_model.predict(X)
+
+        linear_mape = np.mean(
+            np.abs((y - linear_predictions) / np.maximum(y, 1))
+        ) * 100
+
+        linear_r2 = linear_model.score(X, y)
+
+        # ---------------------------------------------------------
+        # Moving Average Model
+        # ---------------------------------------------------------
+        moving_avg_value = np.mean(y[-7:])
+
+        ma_predictions = np.full(len(y), moving_avg_value)
+
+        ma_mape = np.mean(
+            np.abs((y - ma_predictions) / np.maximum(y, 1))
+        ) * 100
+
+        # ---------------------------------------------------------
+        # Select Best Model
+        # ---------------------------------------------------------
+        model_scores = {
+            "polynomial": poly_mape,
+            "linear": linear_mape,
+            "moving_average": ma_mape
+        }
+
+        best_model = min(model_scores, key=model_scores.get)
+
+        if best_model == "polynomial":
+            model = poly_model
             model_type = "polynomial"
-        except:
-            # Fallback to linear regression
-            model = LinearRegression()
-            model.fit(X, y)
-            
-            predictions = model.predict(X)
-            residuals = y - predictions
-            std_error = np.std(residuals)
-            
-            r2_score = model.score(X, y)
-            confidence = max(0, min(100, r2_score * 100))
+            predictions = poly_predictions
+            r2_score = poly_r2
+            confidence = max(0, min(100, poly_r2 * 100))
+            use_poly = True
+
+        elif best_model == "linear":
+            model = linear_model
             model_type = "linear"
-            poly = None
-        
-        # Trend analysis
+            predictions = linear_predictions
+            r2_score = linear_r2
+            confidence = max(0, min(100, linear_r2 * 100))
+            use_poly = False
+
+        else:
+            model = None
+            model_type = "moving_average"
+            predictions = ma_predictions
+            r2_score = 0
+            confidence = max(40, min(75, 100 - ma_mape))
+            use_poly = False
+
+        # ---------------------------------------------------------
+        # Residuals & Error
+        # ---------------------------------------------------------
+        residuals = y - predictions
+        std_error = np.std(residuals)
+
+        # ---------------------------------------------------------
+        # Trend Analysis
+        # ---------------------------------------------------------
         recent_avg = np.mean(quantities[-7:])
         older_avg = np.mean(quantities[:7])
-        
+
         if recent_avg > older_avg * 1.1:
             trend_direction = "increasing"
         elif recent_avg < older_avg * 0.9:
             trend_direction = "decreasing"
         else:
             trend_direction = "stable"
-        
+
         trend_strength = abs(recent_avg - older_avg) / older_avg if older_avg > 0 else 0
-        
-        # Calculate reliability score
-        data_quality = min(1.0, len(quantities) / 90)  # Full score at 90 days
+
+        # ---------------------------------------------------------
+        # Reliability Score
+        # ---------------------------------------------------------
+        data_quality = min(1.0, len(quantities) / 90)
+
         cv = np.std(quantities) / np.mean(quantities) if np.mean(quantities) > 0 else 1
+
         stability = max(0, 1 - cv)
-        
+
         reliability_score = (
-            (confidence / 100) * 0.4 +  # Model accuracy
-            data_quality * 0.3 +         # Data sufficiency
-            stability * 0.3              # Demand stability
+            (confidence / 100) * 0.4 +
+            data_quality * 0.3 +
+            stability * 0.3
         ) * 100
-        
-        # Generate forecasts with confidence intervals
+
+        # ---------------------------------------------------------
+        # Forecast Generation
+        # ---------------------------------------------------------
         forecast_data = []
+
         current_date = datetime.now().date()
+
         last_day_index = (dates[-1] - dates[0]).days
-        
+
         for day in range(1, days_ahead + 1):
+
             forecast_date = current_date + timedelta(days=day)
+
             future_day_index = last_day_index + day
-            
+
             X_future = np.array([[future_day_index]])
-            
-            if poly is not None:
+
+            if model_type == "polynomial":
                 X_future_poly = poly.transform(X_future)
                 base_prediction = model.predict(X_future_poly)[0]
-            else:
+
+            elif model_type == "linear":
                 base_prediction = model.predict(X_future)[0]
-            
-            # Apply weekday adjustment
+
+            else:
+                base_prediction = moving_avg_value
+
+            # Weekday adjustment
             if forecast_date.weekday() < 5:
                 daily_forecast = base_prediction * 1.15
             else:
                 daily_forecast = base_prediction * 0.85
-            
+
             daily_forecast = max(0, daily_forecast)
-            
-            # Calculate 80% confidence interval (±1.28 standard errors)
+
             margin = 1.28 * std_error
+
             lower_bound = max(0, daily_forecast - margin)
             upper_bound = daily_forecast + margin
-            
+
             forecast_data.append({
                 "date": forecast_date.strftime("%Y-%m-%d"),
-                "forecasted_demand": round(daily_forecast, 1),
-                "lower_bound": round(lower_bound, 1),
-                "upper_bound": round(upper_bound, 1),
+                "forecasted_demand": round(float(daily_forecast), 1),
+                "lower_bound": round(float(lower_bound), 1),
+                "upper_bound": round(float(upper_bound), 1),
                 "confidence": round(float(confidence), 1)
             })
-        
+
         avg_daily_demand = np.mean(quantities[-14:])
-        ma_7 = np.mean(quantities[-7:]) if len(quantities) >= 7 else avg_daily_demand
+        ma_7 = np.mean(quantities[-7:])
         ma_30 = np.mean(quantities[-30:]) if len(quantities) >= 30 else avg_daily_demand
-        
-        # Calculate MAPE for recent predictions (if we have actual data)
+
         mape = DemandForecaster.calculate_recent_mape(product_id)
-        
+
         return {
             "forecast": forecast_data,
             "avg_daily_demand": round(float(avg_daily_demand), 2),
@@ -325,7 +467,7 @@ class DemandForecaster:
     
     @staticmethod
     def get_reorder_recommendation(product_id):
-        """Enhanced reorder recommendation with safety stock based on confidence"""
+        """Enhanced reorder recommendation with supplier-based lead time and variability"""
         conn = get_db()
         c = conn.cursor()
         
@@ -354,10 +496,22 @@ class DemandForecaster:
         # Total 30-day demand (use upper bound for conservative ordering)
         total_30day_demand = sum(f["upper_bound"] for f in forecast["forecast"])
         
-        # Enhanced safety stock calculation based on forecast confidence
-        # Lower confidence = higher safety stock
+        # Get best supplier for supplier-based lead time
+        suppliers = rank_suppliers()
+        if suppliers:
+            best_supplier = suppliers[0]
+            lead_time_days = best_supplier['delivery_time']
+        else:
+            lead_time_days = 7  # Fallback default
+        
+        # Add delivery variability buffer (±2 days)
+        variability_buffer = 2
+        
+        # Enhanced safety stock calculation
         confidence_factor = (100 - forecast["confidence"]) / 100
-        # Decision strategy based on forecast confidence
+        safety_stock = avg_daily_demand * (lead_time_days + variability_buffer) * (0.5 + confidence_factor)
+        
+        # Confidence-based decision strategy
         confidence = forecast["confidence"]
         if confidence >= 75:
             decision_mode = "aggressive"
@@ -365,7 +519,13 @@ class DemandForecaster:
             decision_mode = "balanced"
         else:
             decision_mode = "conservative"
-
+        
+        # Adjust safety stock based on decision strategy
+        if decision_mode == "conservative":
+            safety_stock *= 1.3
+        elif decision_mode == "aggressive":
+            safety_stock *= 0.9
+        
         # Inventory risk score calculation
         stockout_pressure = min(100, (30 - days_until_stockout) / 30 * 100) if days_until_stockout < 30 else 0
         
@@ -383,17 +543,6 @@ class DemandForecaster:
         )
         
         inventory_risk_score = round(min(100, max(0, inventory_risk_score)), 1)
-
-
-        lead_time_days = 7  # Assume 7-day lead time
-        
-        safety_stock = avg_daily_demand * lead_time_days * (0.5 + confidence_factor)
-        # Adjust safety stock based on decision strategy
-        if decision_mode == "conservative":
-            safety_stock *= 1.3
-        elif decision_mode == "aggressive":
-            safety_stock *= 0.9
-
         
         # Recommended order quantity
         recommended_qty = max(0, int(total_30day_demand + safety_stock - current_stock))
@@ -423,7 +572,8 @@ class DemandForecaster:
             "confidence_explanation": f"Safety stock increased by {int(confidence_factor * 100)}% due to forecast uncertainty",
             "decision_mode": decision_mode,
             "inventory_risk_score": inventory_risk_score,
-
+            "lead_time_days": lead_time_days,
+            "variability_buffer": variability_buffer
         }
     
     @staticmethod
@@ -473,7 +623,6 @@ class AlertsEngine:
         c.execute('SELECT id, name, current_stock, reorder_point FROM products WHERE current_stock <= reorder_point')
         created_count = 0
         for pid, name, stock, reorder in c.fetchall():
-            # Check if alert already exists
             c.execute('SELECT id FROM alerts WHERE product_id = ? AND alert_type = "stockout" AND resolved = 0', (pid,))
             if not c.fetchone():
                 severity = 'critical' if stock < reorder * 0.3 else 'high' if stock < reorder * 0.5 else 'medium'
@@ -553,47 +702,51 @@ def background_monitor():
             AlertsEngine.check_forecast_accuracy()
             AlertsEngine.simulate_events()
             simulate_daily_demand()
-            time.sleep(30)  # Check every 30 seconds
+            time.sleep(30)
         except Exception as e:
             print(f"Monitor error: {e}")
             time.sleep(30)
 
 def simulate_daily_demand():
-    """Simulate realistic demand based on category + trend + controlled variation"""
+    """Simulate realistic demand using product-specific profiles"""
     conn = get_db()
     c = conn.cursor()
     
-    c.execute('SELECT id, category FROM products')
+    c.execute('SELECT id FROM products')
     products = c.fetchall()
     
     today = datetime.now().date()
     
-    for product_id, category in products:
-        c.execute('SELECT id FROM demand_history WHERE product_id = ? AND demand_date = ?', 
-                 (product_id, today))
+    # ✅ Product-specific demand profiles (base, variation)
+    demand_profiles = {
+        1: (8, 3),    # Laptop
+        2: (5, 2),    # Office Chair
+        3: (45, 10),  # Printer Paper (high demand)
+        4: (12, 4),   # Desk Lamp
+        5: (3, 1),    # Filing Cabinet (low demand)
+        6: (35, 8),   # USB Cable
+        7: (4, 2),    # Whiteboard
+        8: (7, 3)     # Monitor
+    }
+    
+    for (product_id,) in products:
+        # Check if today's demand already exists
+        c.execute(
+            'SELECT id FROM demand_history WHERE product_id = ? AND demand_date = ?',
+            (product_id, today)
+        )
         
         if not c.fetchone():
-            category = category.lower()
-
-            if category == 'electronics':
-                base_demand = 14
-            elif category == 'furniture':
-                base_demand = 5
-            elif category == 'supplies':
-                base_demand = 20
-            else:
-                base_demand = 12
+            base, variation = demand_profiles.get(product_id, (10, 3))
             
-            
-            # Weekday vs weekend
+            # Weekday vs weekend multiplier
             if datetime.now().weekday() < 5:
-                base_demand *= 1.2
+                multiplier = 1.2
             else:
-                base_demand *= 0.8
+                multiplier = 0.8
             
-            # Small controlled variation (±2 only)
-            demand = int(base_demand + random.randint(-2, 2))
-            demand = max(0, demand)
+            demand = int((base + random.randint(-variation, variation)) * multiplier)
+            demand = max(1, demand)
             
             c.execute(
                 'INSERT INTO demand_history (product_id, demand_quantity, demand_date) VALUES (?, ?, ?)',
@@ -610,12 +763,11 @@ def rank_suppliers():
     c.execute('SELECT id, name, reliability_score, avg_delivery_time, quality_rating, price_competitiveness FROM suppliers')
     ranked = []
     for sid, name, rel, delivery, quality, price in c.fetchall():
-        # Risk score calculation (lower is better)
         risk = (
-            (1 - rel) * 0.35 +                    # Reliability (35%)
-            (delivery / 10) * 0.25 +               # Delivery time (25%)
-            ((5 - quality) / 5) * 0.20 +           # Quality (20%)
-            (1 - price) * 0.20                     # Price (20%)
+            (1 - rel) * 0.35 +
+            (delivery / 10) * 0.25 +
+            ((5 - quality) / 5) * 0.20 +
+            (1 - price) * 0.20
         )
         score = (1 - risk) * 100
         ranked.append({
@@ -643,18 +795,21 @@ def calculate_eoq(product_id):
         return {"eoq": 0}
     
     unit_cost = result[0]
+    
     forecast = DemandForecaster.calculate_forecast(product_id)
+    
     if forecast and forecast.get("avg_daily_demand", 0) > 0:
         annual_demand = forecast["avg_daily_demand"] * 365
     else:
-        annual_demand = 1000  # fallback if forecast data unavailable
+        annual_demand = 1000  # fallback
+    
     ordering_cost = 50
     holding_cost = unit_cost * 0.25
     
     eoq = math.sqrt((2 * annual_demand * ordering_cost) / holding_cost) if holding_cost > 0 else 100
     
     return {
-        "eoq": round(eoq, 2), 
+        "eoq": round(eoq, 2),
         "annual_demand": round(annual_demand),
         "ordering_cost": ordering_cost,
         "holding_cost": round(holding_cost, 2)
@@ -807,7 +962,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 <div class="card-header">
 <span>🚨 Active Alerts & Monitoring</span>
 <div style="display:flex;gap:0.5rem">
-<button class="btn btn-warning btn-small" onclick="simulateWeather()"> Simulate Event</button>
+<button class="btn btn-warning btn-small" onclick="simulateWeather()">⚡ Simulate Event</button>
 <button class="btn btn-primary btn-small" onclick="loadAlerts()">🔄 Refresh</button>
 </div>
 </div>
@@ -818,6 +973,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 <div class="card-header"><span>📦 Inventory Status</span>
 <div>
 <button class="btn btn-success btn-small" onclick="showAddProduct()" style="margin-right:0.5rem">➕ Add Product</button>
+<button class="btn btn-warning btn-small" onclick="triggerCSVImport()" style="margin-right:0.5rem" title="Import demand history from CSV (format: product_name,date,quantity)">📂 Import CSV</button>
+<input type="file" id="csvFileInput" accept=".csv" style="display:none" onchange="importDemandCSV(this)">
 <button class="btn btn-primary btn-small" onclick="loadProducts()">🔄 Refresh</button>
 </div>
 </div>
@@ -930,7 +1087,6 @@ async function loadAlerts(){
 try{
 const r=await fetch('/api/alerts');
 allAlerts=await r.json();
-
 const c=document.getElementById('alertsContainer');
 if(allAlerts.length===0){c.innerHTML='<div class="empty-state">✅ No active alerts - All systems operational</div>';return}
 c.innerHTML=allAlerts.map(a=>`<div class="alert-item ${a.severity}">
@@ -1124,6 +1280,18 @@ reorderInfo=`
 <div class="info-label">Forecast Confidence</div>
 <div class="info-value">${reorder.forecast_confidence}%</div>
 </div>
+<div class="info-item">
+<div class="info-label">Lead Time</div>
+<div class="info-value">${reorder.lead_time_days} days</div>
+</div>
+<div class="info-item">
+<div class="info-label">Variability Buffer</div>
+<div class="info-value">±${reorder.variability_buffer} days</div>
+</div>
+<div class="info-item">
+<div class="info-label">Decision Mode</div>
+<div class="info-value" style="text-transform:uppercase">${reorder.decision_mode}</div>
+</div>
 </div>
 <div style="background:#e8f5e9;padding:1rem;border-radius:6px;border-left:3px solid #27ae60;margin-top:1rem">
 <strong>🛡️ Safety Net:</strong> ${reorder.confidence_explanation}
@@ -1267,7 +1435,7 @@ try{
 const r=await fetch('/api/alerts/simulate/weather',{method:'POST'});
 const result=await r.json();
 if(result.success){
-showToast(' Supply chain disruption simulated');
+showToast('⛈️ Supply chain disruption simulated');
 loadStats();loadAlerts();
 }
 }catch(e){console.error(e)}
@@ -1326,6 +1494,51 @@ document.addEventListener('DOMContentLoaded',()=>{
 loadStats();loadAlerts();loadProducts();loadSuppliers();loadOrders();
 setInterval(()=>{loadStats();loadAlerts();},30000);
 });
+
+// ── CSV Import ──────────────────────────────────────────────
+function triggerCSVImport(){
+  document.getElementById('csvFileInput').value='';
+  document.getElementById('csvFileInput').click();
+}
+
+async function importDemandCSV(input){
+  const file = input.files[0];
+  if(!file) return;
+
+  if(!file.name.endsWith('.csv')){
+    showToast('Please select a .csv file','error');
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  showToast('⏳ Importing CSV...','success');
+
+  try{
+    const r = await fetch('/api/import/demand', {
+      method: 'POST',
+      body: formData
+    });
+    const result = await r.json();
+
+    if(result.success){
+      let msg = `✅ Imported ${result.imported} rows`;
+      if(result.skipped > 0) msg += `, skipped ${result.skipped}`;
+      showToast(msg, 'success');
+
+      if(result.errors && result.errors.length > 0){
+        console.warn('CSV import warnings:', result.errors);
+      }
+    } else {
+      showToast(result.error || 'Import failed', 'error');
+    }
+  } catch(e){
+    console.error(e);
+    showToast('Error uploading CSV', 'error');
+  }
+}
+// ── End CSV Import ───────────────────────────────────────────
 
 window.onclick=function(event){
 if(event.target.classList.contains('modal')){event.target.style.display='none'}
@@ -1453,32 +1666,28 @@ def adjust_stock(id):
             new_stock = max(0, current - data['amount'])
             change_type = 'removal'
         
-        # Update stock
         c.execute('UPDATE products SET current_stock = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', (new_stock, id))
         c.execute('INSERT INTO inventory_history (product_id, stock_level, change_amount, change_type) VALUES (?, ?, ?, ?)',
                  (id, new_stock, data['amount'], change_type))
         
         alert_action = None
         
-        # Auto-resolve stockout alerts if stock is now above reorder point
         if new_stock > reorder_point:
-            # Check if there are alerts to resolve
             c.execute('SELECT COUNT(*) FROM alerts WHERE product_id = ? AND alert_type = "stockout" AND resolved = 0', (id,))
             alert_count = c.fetchone()[0]
             
             if alert_count > 0:
                 c.execute('UPDATE alerts SET resolved = 1 WHERE product_id = ? AND alert_type = "stockout" AND resolved = 0', (id,))
-                print(f"✅ Auto-resolved {alert_count} stockout alert(s) for {name} (stock: {new_stock} > reorder: {reorder_point})")
+                print(f"✅ Auto-resolved {alert_count} stockout alert(s) for {name}")
                 alert_action = f"resolved_{alert_count}"
         
-        # Create new stockout alert if stock dropped below reorder point
         elif new_stock <= reorder_point:
             c.execute('SELECT id FROM alerts WHERE product_id = ? AND alert_type = "stockout" AND resolved = 0', (id,))
             if not c.fetchone():
                 severity = 'critical' if new_stock < reorder_point * 0.3 else 'high' if new_stock < reorder_point * 0.5 else 'medium'
                 c.execute('INSERT INTO alerts (alert_type, severity, message, product_id) VALUES (?, ?, ?, ?)',
                          ('stockout', severity, f"Low stock: {name} has {new_stock} units (reorder: {reorder_point})", id))
-                print(f"⚠️ Created new stockout alert for {name} (stock: {new_stock} ≤ reorder: {reorder_point})")
+                print(f"⚠️ Created new stockout alert for {name}")
                 alert_action = "created"
         
         conn.commit()
@@ -1548,6 +1757,40 @@ def simulate_weather():
     AlertsEngine.simulate_events()
     return jsonify({"success": True})
 
+@app.route('/api/alerts/stats')
+def get_alert_stats():
+    """Get alert statistics"""
+    conn = get_db()
+    c = conn.cursor()
+    
+    c.execute("SELECT COUNT(*) FROM alerts WHERE DATE(created_at) = DATE('now')")
+    today_created = c.fetchone()[0]
+    
+    c.execute("SELECT COUNT(*) FROM alerts WHERE DATE(created_at) = DATE('now') AND resolved = 1")
+    today_resolved = c.fetchone()[0]
+    
+    c.execute("SELECT severity, COUNT(*) FROM alerts WHERE resolved = 0 GROUP BY severity")
+    by_severity = {row[0]: row[1] for row in c.fetchall()}
+    
+    c.execute("""SELECT 
+        COUNT(CASE WHEN resolved = 1 THEN 1 END) as resolved,
+        COUNT(*) as total
+        FROM alerts 
+        WHERE created_at >= datetime('now', '-7 days')
+        AND alert_type = 'stockout'""")
+    
+    stats = c.fetchone()
+    
+    conn.close()
+    
+    return jsonify({
+        "today_created": today_created,
+        "today_resolved": today_resolved,
+        "active_by_severity": by_severity,
+        "total_resolved_7d": stats[0],
+        "total_created_7d": stats[1]
+    })
+
 @app.route('/api/suppliers/ranking')
 def supplier_ranking():
     """Get ranked suppliers"""
@@ -1589,7 +1832,6 @@ def update_order_status(id):
         
         alert_action = None
         
-        # If delivered, update stock and auto-resolve alerts
         if data['status'] == 'delivered':
             c.execute('SELECT product_id, quantity FROM orders WHERE id = ?', (id,))
             order = c.fetchone()
@@ -1606,9 +1848,7 @@ def update_order_status(id):
                     c.execute('INSERT INTO inventory_history (product_id, stock_level, change_amount, change_type) VALUES (?, ?, ?, ?)',
                              (product_id, new_stock, quantity, 'delivery'))
                     
-                    # Auto-resolve stockout alerts if stock is now above reorder point
                     if new_stock > reorder_point:
-                        # Check if there are alerts to resolve
                         c.execute('SELECT COUNT(*) FROM alerts WHERE product_id = ? AND alert_type = "stockout" AND resolved = 0', 
                                  (product_id,))
                         alert_count = c.fetchone()[0]
@@ -1617,7 +1857,7 @@ def update_order_status(id):
                             c.execute('UPDATE alerts SET resolved = 1 WHERE product_id = ? AND alert_type = "stockout" AND resolved = 0', 
                                      (product_id,))
                             resolved_count = c.rowcount
-                            print(f"✅ Auto-resolved {resolved_count} stockout alert(s) for {name} after delivery (stock: {new_stock} > reorder: {reorder_point})")
+                            print(f"✅ Auto-resolved {resolved_count} stockout alert(s) for {name} after delivery")
                             alert_action = f"resolved_{resolved_count}"
                     
                     print(f"📦 Delivered: {name} +{quantity} units, new stock: {new_stock}")
@@ -1654,7 +1894,6 @@ def get_model_performance(product_id):
     conn = get_db()
     c = conn.cursor()
     
-    # Get last 30 predictions vs actuals
     c.execute('''SELECT forecast_date, predicted_demand, actual_demand, error_pct, model_type, confidence
                 FROM forecast_accuracy 
                 WHERE product_id = ? 
@@ -1678,12 +1917,10 @@ def get_model_performance(product_id):
     correct_predictions = sum(1 for e in errors if e < 10)
     large_errors = sum(1 for e in errors if e > 20)
     
-    # Trend analysis
     recent_errors = errors[:7] if len(errors) >= 7 else errors
     older_errors = errors[7:14] if len(errors) >= 14 else errors
     error_trend = "improving" if (sum(recent_errors) / len(recent_errors)) < (sum(older_errors) / len(older_errors) if older_errors else 999) else "degrading"
     
-    # Recent misses
     recent_misses = []
     for row in results[:10]:
         if row[3] and row[3] > 15:
@@ -1704,100 +1941,6 @@ def get_model_performance(product_id):
         "recent_misses": recent_misses[:5]
     })
 
-@app.route('/api/debug/product/<int:product_id>/alerts')
-def debug_product_alerts(product_id):
-    """Debug endpoint to check alerts for a product"""
-    conn = get_db()
-    c = conn.cursor()
-    
-    # Get product info
-    c.execute('SELECT name, current_stock, reorder_point FROM products WHERE id = ?', (product_id,))
-    product = c.fetchone()
-    
-    if not product:
-        conn.close()
-        return jsonify({"error": "Product not found"}), 404
-    
-    name, stock, reorder = product
-    
-    # Get all alerts for this product
-    c.execute('''SELECT id, alert_type, severity, message, resolved, created_at 
-                FROM alerts 
-                WHERE product_id = ? 
-                ORDER BY created_at DESC''', (product_id,))
-    
-    alerts = []
-    for row in c.fetchall():
-        alerts.append({
-            "id": row[0],
-            "type": row[1],
-            "severity": row[2],
-            "message": row[3],
-            "resolved": bool(row[4]),
-            "created_at": row[5]
-        })
-    
-    # Count active vs resolved
-    active_count = sum(1 for a in alerts if not a['resolved'])
-    resolved_count = sum(1 for a in alerts if a['resolved'])
-    
-    conn.close()
-    
-    return jsonify({
-        "product": {
-            "id": product_id,
-            "name": name,
-            "current_stock": stock,
-            "reorder_point": reorder,
-            "is_low_stock": stock <= reorder
-        },
-        "alerts": alerts,
-        "summary": {
-            "total": len(alerts),
-            "active": active_count,
-            "resolved": resolved_count
-        }
-    })
-
-@app.route('/api/alerts/stats')
-def get_alert_stats():
-    """Get alert statistics including auto-resolution info"""
-    conn = get_db()
-    c = conn.cursor()
-    
-    # Total alerts created today
-    c.execute("SELECT COUNT(*) FROM alerts WHERE DATE(created_at) = DATE('now')")
-    today_created = c.fetchone()[0]
-    
-    # Total alerts resolved today
-    c.execute("SELECT COUNT(*) FROM alerts WHERE DATE(created_at) = DATE('now') AND resolved = 1")
-    today_resolved = c.fetchone()[0]
-    
-    # Active alerts by severity
-    c.execute("SELECT severity, COUNT(*) FROM alerts WHERE resolved = 0 GROUP BY severity")
-    by_severity = {row[0]: row[1] for row in c.fetchall()}
-    
-    # Auto-resolution rate (last 7 days)
-    c.execute("""SELECT 
-        COUNT(CASE WHEN resolved = 1 THEN 1 END) as resolved,
-        COUNT(*) as total
-        FROM alerts 
-        WHERE created_at >= datetime('now', '-7 days')
-        AND alert_type = 'stockout'""")
-    
-    stats = c.fetchone()
-    auto_resolution_rate = (stats[0] / stats[1] * 100) if stats[1] > 0 else 0
-    
-    conn.close()
-    
-    return jsonify({
-        "today_created": today_created,
-        "today_resolved": today_resolved,
-        "active_by_severity": by_severity,
-        "total_resolved_7d": stats[0],
-        "total_created_7d": stats[1]
-    })
-
 @app.route('/api/auto-reorder/<int:product_id>', methods=['POST'])
 def auto_reorder(product_id):
     """AI-powered automatic purchase order generation"""
@@ -1810,7 +1953,6 @@ def auto_reorder(product_id):
         conn.close()
         return jsonify({"error": "Product not found"}), 404
     
-    # Get best supplier
     suppliers = rank_suppliers()
     if not suppliers:
         conn.close()
@@ -1818,7 +1960,6 @@ def auto_reorder(product_id):
     
     best = suppliers[0]
     
-    # Calculate optimal order quantity
     reorder_rec = DemandForecaster.get_reorder_recommendation(product_id)
     
     if "error" in reorder_rec:
@@ -1846,10 +1987,121 @@ def auto_reorder(product_id):
         "total_cost": total_cost
     })
 
+# ── CSV Import Route ─────────────────────────────────────────
+@app.route('/api/import/demand', methods=['POST'])
+def import_demand_csv():
+    """
+    Import demand history from a CSV file.
+    Expected CSV format (with header): product_name,date,quantity
+    Inserts valid rows into demand_history with source='imported'.
+    Skips invalid rows and returns a summary.
+    """
+    if 'file' not in request.files:
+        return jsonify({"success": False, "error": "No file provided"}), 400
+
+    file = request.files['file']
+
+    if file.filename == '':
+        return jsonify({"success": False, "error": "No file selected"}), 400
+
+    if not file.filename.lower().endswith('.csv'):
+        return jsonify({"success": False, "error": "File must be a .csv"}), 400
+
+    imported = 0
+    skipped  = 0
+    errors   = []
+
+    try:
+        import io, csv
+        stream = io.StringIO(file.stream.read().decode('utf-8', errors='replace'))
+        reader = csv.DictReader(stream)
+
+        # Accept headers case-insensitively
+        if reader.fieldnames is None:
+            return jsonify({"success": False, "error": "CSV file is empty"}), 400
+
+        normalized = [h.strip().lower() for h in reader.fieldnames]
+        required   = {'product_name', 'date', 'quantity'}
+        if not required.issubset(set(normalized)):
+            return jsonify({
+                "success": False,
+                "error": f"CSV must have headers: product_name, date, quantity. Found: {reader.fieldnames}"
+            }), 400
+
+        conn = get_db()
+        c    = conn.cursor()
+
+        # Build a name→id lookup (case-insensitive)
+        c.execute('SELECT id, name FROM products')
+        product_map = {row[1].strip().lower(): row[0] for row in c.fetchall()}
+
+        for line_num, row in enumerate(reader, start=2):   # start=2 because row 1 is the header
+            # Normalise keys
+            row = {k.strip().lower(): v.strip() for k, v in row.items() if k}
+
+            product_name = row.get('product_name', '')
+            date_str     = row.get('date', '')
+            qty_str      = row.get('quantity', '')
+
+            # --- Validate product ---
+            product_id = product_map.get(product_name.lower())
+            if product_id is None:
+                skipped += 1
+                errors.append(f"Row {line_num}: product '{product_name}' not found")
+                continue
+
+            # --- Validate date ---
+            try:
+                from datetime import datetime as _dt
+                parsed_date = _dt.strptime(date_str, '%Y-%m-%d').date()
+            except ValueError:
+                skipped += 1
+                errors.append(f"Row {line_num}: invalid date '{date_str}' — must be YYYY-MM-DD")
+                continue
+
+            # --- Validate quantity ---
+            try:
+                qty = int(qty_str)
+                if qty <= 0:
+                    raise ValueError
+            except (ValueError, TypeError):
+                skipped += 1
+                errors.append(f"Row {line_num}: invalid quantity '{qty_str}' — must be a positive integer")
+                continue
+
+            # --- Insert (skip if an identical record already exists) ---
+            c.execute(
+                'SELECT id FROM demand_history WHERE product_id=? AND demand_date=? AND source=?',
+                (product_id, parsed_date.strftime('%Y-%m-%d'), 'imported')
+            )
+            if c.fetchone():
+                skipped += 1
+                errors.append(f"Row {line_num}: duplicate entry for '{product_name}' on {date_str} — skipped")
+                continue
+
+            c.execute(
+                'INSERT INTO demand_history (product_id, demand_quantity, demand_date, source) VALUES (?, ?, ?, ?)',
+                (product_id, qty, parsed_date.strftime('%Y-%m-%d'), 'imported')
+            )
+            imported += 1
+
+        conn.commit()
+        conn.close()
+
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Failed to process file: {str(e)}"}), 500
+
+    return jsonify({
+        "success":  True,
+        "imported": imported,
+        "skipped":  skipped,
+        "errors":   errors[:20]   # cap at 20 so response stays readable
+    })
+# ── End CSV Import Route ──────────────────────────────────────
+
 if __name__ == '__main__':
     init_db()
     
-    # Start background monitoring thread
     monitor_thread = threading.Thread(target=background_monitor, daemon=True)
     monitor_thread.start()
     
@@ -1862,18 +2114,20 @@ if __name__ == '__main__':
     print("   ✓ ML Demand Forecasting (Polynomial + Linear Regression)")
     print("   ✓ Confidence Intervals & Prediction Bands")
     print("   ✓ Real-time Model Performance Tracking")
+    print("   ✓ Confidence-Based Decision Strategy")
+    print("   ✓ Supplier-Based Dynamic Lead Time")
+    print("   ✓ Delivery Variability Buffer")
     print("   ✓ Dynamic Safety Stock Calculation")
     print("   ✓ Economic Order Quantity (EOQ) Optimization")
     print("   ✓ Multi-factor Supplier Risk Analysis")
-    print("   ✓ Automated Alert System with Severity Levels")
+    print("   ✓ Automated Alert System with Auto-Resolution")
     print("   ✓ Auto Purchase Order Generation")
     print("   ✓ Intelligent Reorder Recommendations")
-    print("\n📈 IMPROVEMENTS FROM V1:")
-    print("   ✓ Direct system integration (no CSV uploads)")
-    print("   ✓ Forecast accuracy tracking")
-    print("   ✓ Confidence-based safety stock")
-    print("   ✓ Model performance dashboard")
-    print("   ✓ Enhanced error handling")
+    print("\n📈 IMPROVEMENTS:")
+    print("   ✓ Category-based demand simulation")
+    print("   ✓ Supplier-specific lead times")
+    print("   ✓ ±2 day delivery variability buffer")
+    print("   ✓ Enhanced safety stock formula")
     print("\n⚡ Background monitoring active (30s interval)")
     print("=" * 80)
     print("\n🎯 READY FOR E-SUMMIT 2025!")
