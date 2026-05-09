@@ -2098,13 +2098,15 @@ def import_demand_csv():
         "errors":   errors[:20]   # cap at 20 so response stays readable
     })
 # ── End CSV Import Route ──────────────────────────────────────
+# Initialize database
+init_db()
+
+# Start background monitoring
+monitor_thread = threading.Thread(target=background_monitor, daemon=True)
+monitor_thread.start()
 
 if __name__ == '__main__':
-    init_db()
-    
-    monitor_thread = threading.Thread(target=background_monitor, daemon=True)
-    monitor_thread.start()
-    
+
     print("=" * 80)
     print("🌐 AI-POWERED SUPPLY CHAIN OPTIMIZER - V2.0")
     print("=" * 80)
@@ -2132,5 +2134,5 @@ if __name__ == '__main__':
     print("=" * 80)
     print("\n🎯 READY FOR E-SUMMIT 2025!")
     print("=" * 80)
-    
+
     app.run(debug=True, use_reloader=False, host='0.0.0.0', port=5000)
