@@ -23,8 +23,6 @@ def get_db():
         check_same_thread=False
     )
 
-    conn.execute("PRAGMA journal_mode=WAL")
-
     conn.row_factory = sqlite3.Row
     return conn
 
