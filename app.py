@@ -18,7 +18,7 @@ app = Flask(__name__)
 
 def get_db():
     conn = sqlite3.connect(
-        'inventory_system.db',
+        '/tmp/inventory_system.db',
         timeout=30,
         check_same_thread=False
     )
