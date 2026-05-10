@@ -17,7 +17,14 @@ warnings.filterwarnings('ignore')
 app = Flask(__name__)
 
 def get_db():
-    conn = sqlite3.connect('inventory_system.db', check_same_thread=False)
+    conn = sqlite3.connect(
+        'inventory_system.db',
+        timeout=30,
+        check_same_thread=False
+    )
+
+    conn.execute("PRAGMA journal_mode=WAL")
+
     conn.row_factory = sqlite3.Row
     return conn
 
