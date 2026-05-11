@@ -707,7 +707,7 @@ def background_monitor():
             AlertsEngine.check_forecast_accuracy()
             AlertsEngine.simulate_events()
             simulate_daily_demand()
-            time.sleep(30)
+            time.sleep(120)
         except Exception as e:
             print(f"Monitor error: {e}")
             time.sleep(30)
