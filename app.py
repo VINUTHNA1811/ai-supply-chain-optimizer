@@ -1102,7 +1102,7 @@ c.innerHTML=allAlerts.map(a=>`<div class="alert-item ${a.severity}">
 <div class="alert-message">${a.message}</div>
 <div class="alert-time">🕐 ${new Date(a.created_at).toLocaleString()}</div>
 <div class="alert-actions">
-<button class="btn btn-success btn-mini" onclick="resolveAlert(${a.id})">✓ Resolve</button>
+<button class="btn btn-success btn-mini" onclick="resolveAlert(${a.id})">✓ Mark as Read</button>
 ${a.product_id?`<button class="btn btn-primary btn-mini" onclick="viewProduct(${a.product_id})">View Product</button>`:''}</div>
 </div>`).join('');
 }catch(e){console.error(e);showToast('Error loading alerts','error')}
@@ -1429,7 +1429,7 @@ try{
 const r=await fetch(`/api/alerts/${id}/resolve`,{method:'POST'});
 const result=await r.json();
 if(result.success){
-showToast('✅ Alert resolved');
+showToast('✅ Alert Marked as Read');
 loadStats();loadAlerts();
 }else{showToast('Failed to resolve alert','error')}
 }catch(e){console.error(e);showToast('Error resolving alert','error')}
