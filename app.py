@@ -16,9 +16,13 @@ warnings.filterwarnings('ignore')
 
 app = Flask(__name__)
 
+import os
+
+DB_NAME = '/tmp/inventory_system.db' if os.name != 'nt' else 'inventory_system.db'
+
 def get_db():
     conn = sqlite3.connect(
-        '/tmp/inventory_system.db',
+        DB_NAME,
         timeout=30,
         check_same_thread=False
     )
