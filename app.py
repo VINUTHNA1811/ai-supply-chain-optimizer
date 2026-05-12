@@ -77,7 +77,7 @@ def init_db():
         product_id INTEGER,
         supplier_id INTEGER,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        resolved BOOLEAN DEFAULT 0)''')
+        resolved BOOLEAN DEFAULT FALSE)''')
     
     # Inventory history table
     c.execute('''CREATE TABLE IF NOT EXISTS inventory_history (
