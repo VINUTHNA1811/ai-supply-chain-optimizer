@@ -40,7 +40,7 @@ def init_db():
     
     # Products table
     c.execute('''CREATE TABLE IF NOT EXISTS products (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         name TEXT NOT NULL,
         category TEXT,
         current_stock INTEGER DEFAULT 0,
@@ -50,7 +50,7 @@ def init_db():
     
     # Suppliers table
     c.execute('''CREATE TABLE IF NOT EXISTS suppliers (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         name TEXT NOT NULL,
         reliability_score REAL DEFAULT 0.8,
         avg_delivery_time INTEGER DEFAULT 5,
@@ -59,7 +59,7 @@ def init_db():
     
     # Orders table
     c.execute('''CREATE TABLE IF NOT EXISTS orders (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         product_id INTEGER,
         supplier_id INTEGER,
         quantity INTEGER,
@@ -70,7 +70,7 @@ def init_db():
     
     # Alerts table
     c.execute('''CREATE TABLE IF NOT EXISTS alerts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         alert_type TEXT NOT NULL,
         severity TEXT DEFAULT 'medium',
         message TEXT NOT NULL,
@@ -81,7 +81,7 @@ def init_db():
     
     # Inventory history table
     c.execute('''CREATE TABLE IF NOT EXISTS inventory_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         product_id INTEGER,
         stock_level INTEGER,
         change_amount INTEGER,
@@ -90,7 +90,7 @@ def init_db():
     
     # Demand history table
     c.execute('''CREATE TABLE IF NOT EXISTS demand_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         product_id INTEGER,
         demand_quantity INTEGER,
         demand_date DATE,
@@ -99,7 +99,7 @@ def init_db():
     
     # Forecast accuracy tracking table
     c.execute('''CREATE TABLE IF NOT EXISTS forecast_accuracy (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         product_id INTEGER,
         forecast_date DATE,
         predicted_demand REAL,
