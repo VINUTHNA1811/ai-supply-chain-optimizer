@@ -6,3 +6,4 @@ pandas==2.0.3
 scipy==1.11.4
 gunicorn
 plotly
+psycopg2-binary
