@@ -3,6 +3,8 @@
 
 from flask import Flask, jsonify, request
 from datetime import datetime, timedelta
+import os
+import psycopg2
 import sqlite3
 import random
 import threading
@@ -16,19 +18,21 @@ warnings.filterwarnings('ignore')
 
 app = Flask(__name__)
 
-import os
-
-DB_NAME = '/tmp/inventory_system.db' if os.name != 'nt' else 'inventory_system.db'
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 def get_db():
-    conn = sqlite3.connect(
-        DB_NAME,
-        timeout=30,
-        check_same_thread=False
-    )
-
-    conn.row_factory = sqlite3.Row
-    return conn
+    if DATABASE_URL:
+        conn = psycopg2.connect(DATABASE_URL)
+        conn.autocommit = True
+        return conn
+    else:
+        conn = sqlite3.connect(
+            'inventory_system.db',
+            timeout=30,
+            check_same_thread=False
+        )
+        conn.row_factory = sqlite3.Row
+        return conn
 
 def init_db():
     conn = get_db()
