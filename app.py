@@ -720,7 +720,7 @@ def background_monitor():
             time.sleep(120)
         except Exception as e:
             print(f"Monitor error: {e}")
-            time.sleep(30)
+            time.sleep(180)
 
 def simulate_daily_demand():
     """Simulate realistic demand using product-specific profiles"""
