@@ -1,8 +1,6 @@
 # app.py - AI-Powered Inventory Management System
 # Enhanced with Forecast Confidence Intervals, Model Performance Tracking, and Error Handling
 
-from tkinter import FALSE
-
 from flask import Flask, jsonify, request
 from datetime import datetime, timedelta
 import os
