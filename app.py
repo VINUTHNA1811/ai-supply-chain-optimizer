@@ -1,6 +1,8 @@
 # app.py - AI-Powered Inventory Management System
 # Enhanced with Forecast Confidence Intervals, Model Performance Tracking, and Error Handling
 
+from tkinter import FALSE
+
 from flask import Flask, jsonify, request
 from datetime import datetime, timedelta
 import os
@@ -15,6 +17,8 @@ from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import PolynomialFeatures
 import warnings
 warnings.filterwarnings('ignore')
+
+os.environ["DATABASE_URL"] = "postgresql://inventory_db_n2k7_user:fE7jqw2XFp7FSmEfcqlTIWQGhcCSfQJq@dpg-d81gbpt0lvsc738jg9hg-a.oregon-postgres.render.com/inventory_db_n2k7"
 
 app = Flask(__name__)
 
@@ -125,7 +129,7 @@ def init_db():
             ('Whiteboard', 'Supplies', 25, 30, 45),
             ('Monitor', 'Electronics', 40, 45, 300)
         ]
-        c.executemany('INSERT INTO products (name, category, current_stock, reorder_point, unit_cost) VALUES (?, ?, ?, ?, ?)', products)
+        c.executemany('INSERT INTO products (name, category, current_stock, reorder_point, unit_cost) VALUES (%s, %s, %s, %s, %s)', products)
         
         suppliers = [
             ('TechSupply Co', 0.92, 3, 4.5, 0.85),
@@ -134,12 +138,12 @@ def init_db():
             ('FastShip Logistics', 0.78, 7, 3.8, 0.90),
             ('Premium Supplies', 0.95, 2, 4.8, 0.70)
         ]
-        c.executemany('INSERT INTO suppliers (name, reliability_score, avg_delivery_time, quality_rating, price_competitiveness) VALUES (?, ?, ?, ?, ?)', suppliers)
+        c.executemany('INSERT INTO suppliers (name, reliability_score, avg_delivery_time, quality_rating, price_competitiveness) VALUES (%s, %s, %s, %s, %s)', suppliers)
         
         # Initialize inventory history
         c.execute('SELECT id, current_stock FROM products')
         for pid, stock in c.fetchall():
-            c.execute('INSERT INTO inventory_history (product_id, stock_level, change_amount, change_type) VALUES (?, ?, ?, ?)',
+            c.execute('INSERT INTO inventory_history (product_id, stock_level, change_amount, change_type) VALUES (%s, %s, %s, %s)',
                      (pid, stock, stock, 'initial'))
         
         # Generate 90 days of historical demand data
@@ -171,7 +175,7 @@ def init_db():
                 variation = int(base_demand * 0.15)
                 demand = max(0, base_demand + random.randint(-variation, variation))
                 
-                c.execute('INSERT INTO demand_history (product_id, demand_quantity, demand_date) VALUES (?, ?, ?)',
+                c.execute('INSERT INTO demand_history (product_id, demand_quantity, demand_date) VALUES (%s, %s, %s)',
                          (product_id, demand, demand_date))
         
         print("✅ Database initialized successfully!")
@@ -196,7 +200,7 @@ class DemandForecaster:
 
         c.execute('''SELECT demand_quantity, demand_date 
                     FROM demand_history 
-                    WHERE product_id = ? 
+                    WHERE product_id = %s 
                     ORDER BY demand_date ASC''', (product_id,))
 
         history = c.fetchall()
@@ -466,7 +470,7 @@ class DemandForecaster:
         c = conn.cursor()
         
         c.execute('''SELECT error_pct FROM forecast_accuracy 
-                    WHERE product_id = ? 
+                    WHERE product_id = %s 
                     ORDER BY forecast_date DESC 
                     LIMIT 30''', (product_id,))
         
@@ -484,7 +488,7 @@ class DemandForecaster:
         conn = get_db()
         c = conn.cursor()
         
-        c.execute('SELECT current_stock, reorder_point, unit_cost, name FROM products WHERE id = ?', (product_id,))
+        c.execute('SELECT current_stock, reorder_point, unit_cost, name FROM products WHERE id = %s ', (product_id,))
         product = c.fetchone()
         conn.close()
         
@@ -603,7 +607,7 @@ class DemandForecaster:
         try:
             c.execute('''INSERT INTO forecast_accuracy 
                         (product_id, forecast_date, predicted_demand, actual_demand, error_pct, model_type, confidence)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)''',
                      (product_id, forecast_date, predicted_demand, actual_demand, error_pct, model_type, confidence))
             conn.commit()
         except Exception as e:
@@ -622,13 +626,13 @@ class AlertsEngine:
         c.execute('''SELECT a.id, p.name, p.current_stock, p.reorder_point 
                     FROM alerts a 
                     JOIN products p ON a.product_id = p.id 
-                    WHERE a.alert_type = "stockout" 
-                    AND a.resolved = 0 
+                    WHERE a.alert_type = 'stockout' 
+                    AND a.resolved = FALSE 
                     AND p.current_stock > p.reorder_point''')
         
         resolved_count = 0
         for alert_id, name, stock, reorder in c.fetchall():
-            c.execute('UPDATE alerts SET resolved = 1 WHERE id = ?', (alert_id,))
+            c.execute('UPDATE alerts SET resolved = TRUE WHERE id = %s', (alert_id,))
             resolved_count += 1
             print(f"✅ Auto-resolved stockout alert for {name} (stock: {stock} > reorder: {reorder})")
         
@@ -636,10 +640,10 @@ class AlertsEngine:
         c.execute('SELECT id, name, current_stock, reorder_point FROM products WHERE current_stock <= reorder_point')
         created_count = 0
         for pid, name, stock, reorder in c.fetchall():
-            c.execute('SELECT id FROM alerts WHERE product_id = ? AND alert_type = "stockout" AND resolved = 0', (pid,))
+            c.execute("SELECT id FROM alerts WHERE product_id = %s AND alert_type = 'stockout' AND resolved = FALSE", (pid,))
             if not c.fetchone():
                 severity = 'critical' if stock < reorder * 0.3 else 'high' if stock < reorder * 0.5 else 'medium'
-                c.execute('INSERT INTO alerts (alert_type, severity, message, product_id) VALUES (?, ?, ?, ?)',
+                c.execute('INSERT INTO alerts (alert_type, severity, message, product_id) VALUES (%s, %s, %s, %s)',
                          ('stockout', severity, f"Low stock: {name} has {stock} units (reorder: {reorder})", pid))
                 created_count += 1
                 print(f"⚠️ Created stockout alert for {name} (stock: {stock} ≤ reorder: {reorder})")
@@ -658,17 +662,17 @@ class AlertsEngine:
         
         c.execute('''SELECT product_id, AVG(error_pct) as avg_error
                     FROM forecast_accuracy
-                    WHERE forecast_date >= date('now', '-7 days')
+                    WHERE forecast_date >= CURRENT_DATE - INTERVAL '7 days'
                     GROUP BY product_id
-                    HAVING avg_error > 25''')
+                    HAVING AVG(error_pct) > 25''')
         
         for pid, avg_error in c.fetchall():
-            c.execute('SELECT name FROM products WHERE id = ?', (pid,))
+            c.execute('SELECT name FROM products WHERE id = %s', (pid,))
             product = c.fetchone()
             if product:
-                c.execute('SELECT id FROM alerts WHERE product_id = ? AND alert_type = "forecast_degradation" AND resolved = 0', (pid,))
+                c.execute("SELECT id FROM alerts WHERE product_id = %s AND alert_type = 'forecast_degradation' AND resolved = FALSE", (pid,))
                 if not c.fetchone():
-                    c.execute('INSERT INTO alerts (alert_type, severity, message, product_id) VALUES (?, ?, ?, ?)',
+                    c.execute('INSERT INTO alerts (alert_type, severity, message, product_id) VALUES (%s, %s, %s, %s)',
                              ('forecast_degradation', 'medium', 
                               f"Forecast accuracy declining for {product[0]}: {avg_error:.1f}% error", pid))
         
@@ -691,7 +695,7 @@ class AlertsEngine:
                 ("Labor strike at major distribution center", "high")
             ]
             event, severity = random.choice(events)
-            c.execute('INSERT INTO alerts (alert_type, severity, message) VALUES (?, ?, ?)',
+            c.execute('INSERT INTO alerts (alert_type, severity, message) VALUES (%s, %s, %s)',
                      ('weather', severity, f"Weather Alert: {event}"))
         
         # Supplier delays (15% chance)
@@ -701,7 +705,7 @@ class AlertsEngine:
             if supplier:
                 sid, name = supplier
                 delay = random.randint(2, 7)
-                c.execute('INSERT INTO alerts (alert_type, severity, message, supplier_id) VALUES (?, ?, ?, ?)',
+                c.execute('INSERT INTO alerts (alert_type, severity, message, supplier_id) VALUES (%s, %s, %s, %s)',
                          ('supplier_delay', 'medium', f"Supplier delay: {name} reporting {delay}-day delay", sid))
         
         conn.commit()
@@ -745,7 +749,7 @@ def simulate_daily_demand():
     for (product_id,) in products:
         # Check if today's demand already exists
         c.execute(
-            'SELECT id FROM demand_history WHERE product_id = ? AND demand_date = ?',
+            'SELECT id FROM demand_history WHERE product_id = %s AND demand_date = %s',
             (product_id, today)
         )
         
@@ -762,7 +766,7 @@ def simulate_daily_demand():
             demand = max(1, demand)
             
             c.execute(
-                'INSERT INTO demand_history (product_id, demand_quantity, demand_date) VALUES (?, ?, ?)',
+                'INSERT INTO demand_history (product_id, demand_quantity, demand_date) VALUES (%s, %s, %s)',
                 (product_id, demand, today)
             )
     
@@ -800,7 +804,7 @@ def calculate_eoq(product_id):
     """Economic Order Quantity calculation"""
     conn = get_db()
     c = conn.cursor()
-    c.execute('SELECT unit_cost FROM products WHERE id = ?', (product_id,))
+    c.execute('SELECT unit_cost FROM products WHERE id = %s', (product_id,))
     result = c.fetchone()
     conn.close()
     
@@ -1569,9 +1573,9 @@ def dashboard_stats():
     total = c.fetchone()[0]
     c.execute('SELECT COUNT(*) FROM products WHERE current_stock <= reorder_point')
     low = c.fetchone()[0]
-    c.execute('SELECT COUNT(*) FROM alerts WHERE resolved = 0')
+    c.execute('SELECT COUNT(*) FROM alerts WHERE resolved = FALSE')
     alerts = c.fetchone()[0]
-    c.execute('SELECT COUNT(*) FROM orders WHERE status = "pending"')
+    c.execute("SELECT COUNT(*) FROM orders WHERE status = 'pending'")
     orders = c.fetchone()[0]
     conn.close()
     return jsonify({
@@ -1606,7 +1610,7 @@ def get_product(id):
     """Get single product details"""
     conn = get_db()
     c = conn.cursor()
-    c.execute('SELECT * FROM products WHERE id = ?', (id,))
+    c.execute('SELECT * FROM products WHERE id = %s', (id,))
     p = c.fetchone()
     conn.close()
     if not p:
@@ -1627,10 +1631,10 @@ def add_product():
     conn = get_db()
     c = conn.cursor()
     try:
-        c.execute('INSERT INTO products (name, category, current_stock, reorder_point, unit_cost) VALUES (?, ?, ?, ?, ?)',
+        c.execute('INSERT INTO products (name, category, current_stock, reorder_point, unit_cost) VALUES (%s, %s, %s, %s, %s)',
                  (data['name'], data['category'], data['current_stock'], data['reorder_point'], data['unit_cost']))
         product_id = c.lastrowid
-        c.execute('INSERT INTO inventory_history (product_id, stock_level, change_amount, change_type) VALUES (?, ?, ?, ?)',
+        c.execute('INSERT INTO inventory_history (product_id, stock_level, change_amount, change_type) VALUES (%s, %s, %s, %s)',
                  (product_id, data['current_stock'], data['current_stock'], 'initial'))
         conn.commit()
         conn.close()
@@ -1645,11 +1649,11 @@ def delete_product(id):
     conn = get_db()
     c = conn.cursor()
     try:
-        c.execute('DELETE FROM products WHERE id = ?', (id,))
-        c.execute('DELETE FROM alerts WHERE product_id = ?', (id,))
-        c.execute('DELETE FROM inventory_history WHERE product_id = ?', (id,))
-        c.execute('DELETE FROM demand_history WHERE product_id = ?', (id,))
-        c.execute('DELETE FROM forecast_accuracy WHERE product_id = ?', (id,))
+        c.execute('DELETE FROM products WHERE id = %s', (id,))
+        c.execute('DELETE FROM alerts WHERE product_id = %s', (id,))
+        c.execute('DELETE FROM inventory_history WHERE product_id = %s', (id,))
+        c.execute('DELETE FROM demand_history WHERE product_id = %s', (id,))
+        c.execute('DELETE FROM forecast_accuracy WHERE product_id = %s', (id,))
         conn.commit()
         conn.close()
         return jsonify({"success": True})
@@ -1664,7 +1668,7 @@ def adjust_stock(id):
     conn = get_db()
     c = conn.cursor()
     try:
-        c.execute('SELECT current_stock, reorder_point, name FROM products WHERE id = ?', (id,))
+        c.execute('SELECT current_stock, reorder_point, name FROM products WHERE id = %s', (id,))
         result = c.fetchone()
         if not result:
             conn.close()
@@ -1679,26 +1683,26 @@ def adjust_stock(id):
             new_stock = max(0, current - data['amount'])
             change_type = 'removal'
         
-        c.execute('UPDATE products SET current_stock = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?', (new_stock, id))
-        c.execute('INSERT INTO inventory_history (product_id, stock_level, change_amount, change_type) VALUES (?, ?, ?, ?)',
+        c.execute('UPDATE products SET current_stock = %s, last_updated = CURRENT_TIMESTAMP WHERE id = %s', (new_stock, id))
+        c.execute('INSERT INTO inventory_history (product_id, stock_level, change_amount, change_type) VALUES (%s, %s, %s, %s)',
                  (id, new_stock, data['amount'], change_type))
         
         alert_action = None
         
         if new_stock > reorder_point:
-            c.execute('SELECT COUNT(*) FROM alerts WHERE product_id = ? AND alert_type = "stockout" AND resolved = 0', (id,))
+            c.execute('SELECT COUNT(*) FROM alerts WHERE product_id = %s AND alert_type = %s AND resolved = %s', (id, 'stockout', False))
             alert_count = c.fetchone()[0]
             
             if alert_count > 0:
-                c.execute('UPDATE alerts SET resolved = 1 WHERE product_id = ? AND alert_type = "stockout" AND resolved = 0', (id,))
+                c.execute('UPDATE alerts SET resolved = TRUE WHERE product_id = %s AND alert_type = %s AND resolved = %s', (id, 'stockout', False))
                 print(f"✅ Auto-resolved {alert_count} stockout alert(s) for {name}")
                 alert_action = f"resolved_{alert_count}"
         
         elif new_stock <= reorder_point:
-            c.execute('SELECT id FROM alerts WHERE product_id = ? AND alert_type = "stockout" AND resolved = 0', (id,))
+            c.execute('SELECT id FROM alerts WHERE product_id = %s AND alert_type = %s AND resolved = %s', (id, 'stockout', False))
             if not c.fetchone():
                 severity = 'critical' if new_stock < reorder_point * 0.3 else 'high' if new_stock < reorder_point * 0.5 else 'medium'
-                c.execute('INSERT INTO alerts (alert_type, severity, message, product_id) VALUES (?, ?, ?, ?)',
+                c.execute('INSERT INTO alerts (alert_type, severity, message, product_id) VALUES (%s, %s, %s, %s)',
                          ('stockout', severity, f"Low stock: {name} has {new_stock} units (reorder: {reorder_point})", id))
                 print(f"⚠️ Created new stockout alert for {name}")
                 alert_action = "created"
@@ -1724,7 +1728,7 @@ def get_alerts():
         p.name, s.name FROM alerts a 
         LEFT JOIN products p ON a.product_id = p.id
         LEFT JOIN suppliers s ON a.supplier_id = s.id
-        WHERE a.resolved = 0 
+        WHERE a.resolved = FALSE 
         ORDER BY 
             CASE a.severity 
                 WHEN 'critical' THEN 1 
@@ -1756,7 +1760,7 @@ def resolve_alert(id):
     conn = get_db()
     c = conn.cursor()
     try:
-        c.execute('UPDATE alerts SET resolved = 1 WHERE id = ?', (id,))
+        c.execute('UPDATE alerts SET resolved = TRUE WHERE id = %s', (id,))
         conn.commit()
         conn.close()
         return jsonify({"success": True})
@@ -1779,14 +1783,14 @@ def get_alert_stats():
     c.execute("SELECT COUNT(*) FROM alerts WHERE DATE(created_at) = DATE('now')")
     today_created = c.fetchone()[0]
     
-    c.execute("SELECT COUNT(*) FROM alerts WHERE DATE(created_at) = DATE('now') AND resolved = 1")
+    c.execute("SELECT COUNT(*) FROM alerts WHERE DATE(created_at) = DATE('now') AND resolved = TRUE")
     today_resolved = c.fetchone()[0]
     
-    c.execute("SELECT severity, COUNT(*) FROM alerts WHERE resolved = 0 GROUP BY severity")
+    c.execute("SELECT severity, COUNT(*) FROM alerts WHERE resolved = FALSE GROUP BY severity")
     by_severity = {row[0]: row[1] for row in c.fetchall()}
     
     c.execute("""SELECT 
-        COUNT(CASE WHEN resolved = 1 THEN 1 END) as resolved,
+        COUNT(CASE WHEN resolved = TRUE THEN 1 END) as resolved,
         COUNT(*) as total
         FROM alerts 
         WHERE created_at >= datetime('now', '-7 days')
@@ -1841,34 +1845,34 @@ def update_order_status(id):
     conn = get_db()
     c = conn.cursor()
     try:
-        c.execute('UPDATE orders SET status = ? WHERE id = ?', (data['status'], id))
+        c.execute('UPDATE orders SET status = %s WHERE id = %s', (data['status'], id))
         
         alert_action = None
         
         if data['status'] == 'delivered':
-            c.execute('SELECT product_id, quantity FROM orders WHERE id = ?', (id,))
+            c.execute('SELECT product_id, quantity FROM orders WHERE id = %s', (id,))
             order = c.fetchone()
             if order:
                 product_id, quantity = order
-                c.execute('SELECT current_stock, reorder_point, name FROM products WHERE id = ?', (product_id,))
+                c.execute('SELECT current_stock, reorder_point, name FROM products WHERE id = %s', (product_id,))
                 product = c.fetchone()
                 if product:
                     current, reorder_point, name = product
                     new_stock = current + quantity
                     
-                    c.execute('UPDATE products SET current_stock = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?',
+                    c.execute('UPDATE products SET current_stock = %s, last_updated = CURRENT_TIMESTAMP WHERE id = %s',
                              (new_stock, product_id))
-                    c.execute('INSERT INTO inventory_history (product_id, stock_level, change_amount, change_type) VALUES (?, ?, ?, ?)',
+                    c.execute('INSERT INTO inventory_history (product_id, stock_level, change_amount, change_type) VALUES (%s, %s, %s, %s)',
                              (product_id, new_stock, quantity, 'delivery'))
                     
                     if new_stock > reorder_point:
-                        c.execute('SELECT COUNT(*) FROM alerts WHERE product_id = ? AND alert_type = "stockout" AND resolved = 0', 
-                                 (product_id,))
+                        c.execute('SELECT COUNT(*) FROM alerts WHERE product_id = %s AND alert_type = %s AND resolved = %s', 
+                                 (product_id, 'stockout', False))
                         alert_count = c.fetchone()[0]
                         
                         if alert_count > 0:
-                            c.execute('UPDATE alerts SET resolved = 1 WHERE product_id = ? AND alert_type = "stockout" AND resolved = 0', 
-                                     (product_id,))
+                            c.execute('UPDATE alerts SET resolved = TRUE WHERE product_id = %s AND alert_type = %s AND resolved = %s', 
+                                     (product_id, 'stockout', False))
                             resolved_count = c.rowcount
                             print(f"✅ Auto-resolved {resolved_count} stockout alert(s) for {name} after delivery")
                             alert_action = f"resolved_{resolved_count}"
@@ -1909,7 +1913,7 @@ def get_model_performance(product_id):
     
     c.execute('''SELECT forecast_date, predicted_demand, actual_demand, error_pct, model_type, confidence
                 FROM forecast_accuracy 
-                WHERE product_id = ? 
+                WHERE product_id = %s 
                 ORDER BY forecast_date DESC 
                 LIMIT 30''', (product_id,))
     
@@ -1959,7 +1963,7 @@ def auto_reorder(product_id):
     """AI-powered automatic purchase order generation"""
     conn = get_db()
     c = conn.cursor()
-    c.execute('SELECT name, unit_cost FROM products WHERE id = ?', (product_id,))
+    c.execute('SELECT name, unit_cost FROM products WHERE id = %s', (product_id,))
     product = c.fetchone()
     
     if not product:
@@ -1984,7 +1988,7 @@ def auto_reorder(product_id):
     total_cost = qty * product[1]
     delivery = datetime.now() + timedelta(days=best['delivery_time'])
     
-    c.execute('INSERT INTO orders (product_id, supplier_id, quantity, expected_delivery, status, total_cost) VALUES (?, ?, ?, ?, ?, ?)',
+    c.execute('INSERT INTO orders (product_id, supplier_id, quantity, expected_delivery, status, total_cost) VALUES (%s, %s, %s, %s, %s, %s)',
              (product_id, best['id'], qty, delivery, 'pending', total_cost))
     order_id = c.lastrowid
     conn.commit()
@@ -2084,7 +2088,7 @@ def import_demand_csv():
 
             # --- Insert (skip if an identical record already exists) ---
             c.execute(
-                'SELECT id FROM demand_history WHERE product_id=? AND demand_date=? AND source=?',
+                'SELECT id FROM demand_history WHERE product_id=%s AND demand_date=%s AND source=%s',
                 (product_id, parsed_date.strftime('%Y-%m-%d'), 'imported')
             )
             if c.fetchone():
@@ -2093,7 +2097,7 @@ def import_demand_csv():
                 continue
 
             c.execute(
-                'INSERT INTO demand_history (product_id, demand_quantity, demand_date, source) VALUES (?, ?, ?, ?)',
+                'INSERT INTO demand_history (product_id, demand_quantity, demand_date, source) VALUES (%s, %s, %s, %s)',
                 (product_id, qty, parsed_date.strftime('%Y-%m-%d'), 'imported')
             )
             imported += 1
@@ -2148,4 +2152,4 @@ if __name__ == '__main__':
     print("\n🎯 READY FOR E-SUMMIT 2025!")
     print("=" * 80)
 
-    app.run(debug=True, use_reloader=False, host='0.0.0.0', port=5000)
+    app.run(debug=FALSE, use_reloader=False, host='0.0.0.0', port=5000)
