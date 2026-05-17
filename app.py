@@ -850,11 +850,54 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .version-badge{display:inline-block;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;padding:0.3rem 0.8rem;border-radius:15px;font-size:0.75rem;margin-left:1rem;font-weight:600}
 .container{max-width:1400px;margin:2rem auto;padding:0 2rem}
 .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1.5rem;margin-bottom:2rem}
-.stat-card{background:rgba(255,255,255,0.95);padding:1.8rem;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.12);border-left:4px solid #3498db;transition:transform 0.3s;cursor:pointer}
-.stat-card:hover{transform:translateY(-5px);box-shadow:0 12px 32px rgba(0,0,0,0.18)}
-.stat-card.warning{border-left-color:#f39c12}
-.stat-card.danger{border-left-color:#e74c3c}
-.stat-card.success{border-left-color:#27ae60}
+.stat-card{
+background:rgba(255,255,255,0.95);
+padding:1.8rem;
+border-radius:16px;
+box-shadow:0 8px 24px rgba(0,0,0,0.12);
+border-left:4px solid #3498db;
+transition:all 0.35s ease;
+cursor:pointer;
+position:relative;
+overflow:hidden;
+}
+
+.stat-card::before{
+content:'';
+position:absolute;
+top:0;
+left:-100%;
+width:100%;
+height:100%;
+background:linear-gradient(
+90deg,
+transparent,
+rgba(255,255,255,0.25),
+transparent
+);
+transition:0.6s;
+}
+
+.stat-card:hover::before{
+left:100%;
+}
+
+.stat-card:hover{
+transform:translateY(-8px) scale(1.02);
+box-shadow:0 18px 40px rgba(0,0,0,0.22);
+}
+
+.stat-card.warning{
+border-left-color:#f39c12;
+}
+
+.stat-card.danger{
+border-left-color:#e74c3c;
+}
+
+.stat-card.success{
+border-left-color:#27ae60;
+}
 .stat-value{font-size:2.5rem;font-weight:700;color:#2c3e50}
 .stat-label{color:#7f8c8d;font-size:0.9rem;text-transform:uppercase;letter-spacing:0.5px;margin-top:0.3rem}
 .stat-sublabel{color:#95a5a6;font-size:0.75rem;margin-top:0.2rem}
@@ -936,16 +979,38 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 @keyframes slideIn{from{transform:translateY(-50px);opacity:0}to{transform:translateY(0);opacity:1}}
 @keyframes slideInRight{from{transform:translateX(400px);opacity:0}to{transform:translateX(0);opacity:1}}
 @media(max-width:768px){.dashboard-grid{grid-template-columns:1fr}.stat-value{font-size:2rem}.form-row{grid-template-columns:1fr}}
+@keyframes spin{
+0%{transform:rotate(0deg);}
+100%{transform:rotate(360deg);}
+}
 </style>
 </head>
 <body>
+
 <div class="header">
+
 <div style="display:flex;justify-content:space-between;align-items:center">
+
 <div>
 <h1>🌐 AI-Powered Supply Chain Optimizer<span class="version-badge">V2.0</span></h1>
-<p>ML-Powered Demand Forecasting | Auto-Reorder System | Real-Time Integration</p>
+
+<p>
+ML-Powered Demand Forecasting | Auto-Reorder System | Real-Time Integration
+</p>
+
+<div id="lastUpdated"
+style="
+margin-top:10px;
+font-size:14px;
+color:#2d3436;
+">
+Last Synced: --
 </div>
+
 </div>
+
+</div>
+
 </div>
 
 <div class="container">
@@ -1087,15 +1152,45 @@ setTimeout(()=>toast.className='toast',3000);
 function showModal(id){document.getElementById(id).style.display='block'}
 function closeModal(id){document.getElementById(id).style.display='none'}
 
+function animateValue(id, start, end, duration){
+let startTimestamp = null;
+
+const step = (timestamp) => {
+if(!startTimestamp) startTimestamp = timestamp;
+
+const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+
+document.getElementById(id).textContent =
+Math.floor(progress * (end - start) + start);
+
+if(progress < 1){
+window.requestAnimationFrame(step);
+}
+};
+
+window.requestAnimationFrame(step);
+}
+
 async function loadStats(){
 try{
-const r=await fetch('/api/dashboard/stats');
-const d=await r.json();
-document.getElementById('totalProducts').textContent=d.total_products;
-document.getElementById('lowStock').textContent=d.low_stock_items;
-document.getElementById('activeAlerts').textContent=d.active_alerts;
-document.getElementById('pendingOrders').textContent=d.pending_orders;
-}catch(e){console.error(e);showToast('Error loading stats','error')}
+
+const r = await fetch('/api/dashboard/stats');
+const d = await r.json();
+
+animateValue('totalProducts',0,d.total_products,800);
+animateValue('lowStock',0,d.low_stock_items,800);
+animateValue('activeAlerts',0,d.active_alerts,800);
+animateValue('pendingOrders',0,d.pending_orders,800);
+
+const now = new Date();
+
+document.getElementById('lastUpdated').textContent =
+`Last Synced: ${now.toLocaleTimeString()}`;
+
+}catch(e){
+console.error(e);
+showToast('Error loading stats','error');
+}
 }
 
 async function loadAlerts(){
@@ -1181,213 +1276,495 @@ ${o.status==='pending'?`<button class="btn btn-danger btn-small" onclick="update
 </div>`).join('');
 }catch(e){console.error(e);showToast('Error loading orders','error')}
 }
-
 async function viewProduct(id){
+
+document.getElementById('modalTitle').textContent = '⏳ Loading Product Analytics...';
+
+document.getElementById('modalBody').innerHTML = `
+<div style="padding:50px;text-align:center">
+
+<div style="
+width:60px;
+height:60px;
+border:6px solid #e0e7ff;
+border-top:6px solid #667eea;
+border-radius:50%;
+margin:0 auto 20px auto;
+animation:spin 1s linear infinite;
+"></div>
+
+<div style="
+font-size:20px;
+font-weight:600;
+color:#667eea;
+margin-bottom:10px;
+">
+Loading Product Analytics...
+</div>
+
+<div style="
+color:#666;
+font-size:15px;
+">
+Fetching AI Forecasts, EOQ & Inventory Insights
+</div>
+
+</div>
+`;
+
+showModal('productModal');
+
 try{
-const r=await fetch(`/api/products/${id}`);
-const p=await r.json();
-const eoqR=await fetch(`/api/eoq/${id}`);
-const eoq=await eoqR.json();
-const forecastR=await fetch(`/api/forecast/${id}`);
-const forecast=await forecastR.json();
-const reorderR=await fetch(`/api/reorder-recommendation/${id}`);
-const reorder=await reorderR.json();
-const perfR=await fetch(`/api/model-performance/${id}`);
-const perf=await perfR.json();
+
+const [
+  r,
+  eoqR
+//  reorderR,
+//  perfR
+] = await Promise.all([
+  fetch(`/api/products/${id}`),
+  fetch(`/api/eoq/${id}`),
+//  fetch(`/api/reorder-recommendation/${id}`),
+//  fetch(`/api/model-performance/${id}`)
+]);
+
+const p = await r.json();
+const eoq = await eoqR.json();
+// const reorder = await reorderR.json();
+// const perf = await perfR.json();
 
 document.getElementById('modalTitle').textContent=`📦 ${p.name}`;
 
 let perfIndicator='';
-if(perf && !perf.error){
-let perfClass='good';
-let perfText='Excellent';
-if(perf.accuracy_pct<70){perfClass='medium';perfText='Good'}
-if(perf.accuracy_pct<50){perfClass='poor';perfText='Needs Review'}
-perfIndicator=`
-<div class="performance-indicator">
-<span class="perf-dot ${perfClass}"></span>
-<span>Model Performance: ${perfText} (${perf.accuracy_pct}% accurate over ${perf.predictions_tracked} days)</span>
-</div>`;
-}
+// if(perf && !perf.error){
+// let perfClass='good';
+// let perfText='Excellent';
+// if(perf.accuracy_pct<70){perfClass='medium';perfText='Good'}
+// if(perf.accuracy_pct<50){perfClass='poor';perfText='Needs Review'}
+// perfIndicator=`
+// <div class="performance-indicator">
+// <span class="perf-dot ${perfClass}"></span>
+// <span>Model Performance: ${perfText} (${perf.accuracy_pct}% accurate over ${perf.predictions_tracked} days)</span>
+// </div>`;
+// }
 
 let forecastChart='';
-if(forecast.forecast && forecast.forecast.length>0){
-const dates=forecast.forecast.map(f=>f.date);
-const demands=forecast.forecast.map(f=>f.forecasted_demand);
-const lowerBounds=forecast.forecast.map(f=>f.lower_bound);
-const upperBounds=forecast.forecast.map(f=>f.upper_bound);
+// if(forecast.forecast && forecast.forecast.length>0){
+// const dates=forecast.forecast.map(f=>f.date);
+// const demands=forecast.forecast.map(f=>f.forecasted_demand);
+// const lowerBounds=forecast.forecast.map(f=>f.lower_bound);
+// const upperBounds=forecast.forecast.map(f=>f.upper_bound);
 
-forecastChart=`
-<div class="forecast-section">
-<div class="forecast-header">
-<span>🤖 ML-Powered 30-Day Demand Forecast</span>
-<span class="badge badge-${forecast.confidence>70?'success':forecast.confidence>50?'medium':'high'}">${forecast.confidence}% Confidence</span>
-</div>
-${perfIndicator}
-<div class="info-grid" style="grid-template-columns:repeat(4,1fr);margin:1rem 0">
-<div class="info-item">
-<div class="info-label">Model Type</div>
-<div class="info-value" style="font-size:1rem;text-transform:uppercase">${forecast.model_type}</div>
-</div>
-<div class="info-item">
-<div class="info-label">Trend Direction</div>
-<div class="info-value" style="font-size:1rem;color:${forecast.trend==='increasing'?'#27ae60':forecast.trend==='decreasing'?'#e74c3c':'#3498db'}">${forecast.trend.toUpperCase()}</div>
-</div>
-<div class="info-item">
-<div class="info-label">Avg Daily Demand</div>
-<div class="info-value">${forecast.avg_daily_demand}</div>
-</div>
-<div class="info-item">
-<div class="info-label">Reliability Score</div>
-<div class="info-value">${forecast.reliability_score}%</div>
-</div>
-<div class="info-item">
-<div class="info-label">R² Score</div>
-<div class="info-value">${forecast.r2_score}</div>
-</div>
-<div class="info-item">
-<div class="info-label">Std Error</div>
-<div class="info-value">±${forecast.std_error}</div>
-</div>
-<div class="info-item">
-<div class="info-label">7-Day MA</div>
-<div class="info-value">${forecast.ma_7}</div>
-</div>
-<div class="info-item">
-<div class="info-label">30-Day MA</div>
-<div class="info-value">${forecast.ma_30}</div>
-</div>
-</div>
-<div style="background:#f8f9fa;padding:1rem;border-radius:6px;margin:1rem 0">
-<strong>Prediction Interval:</strong> ${forecast.prediction_interval} confidence band shown below (shaded area)
-</div>
-<div id="forecastChart" style="height:350px"></div>
-</div>`;
-}
+// forecastChart=`
+// <div class="forecast-section">
+// <div class="forecast-header">
+// <span>🤖 ML-Powered 30-Day Demand Forecast</span>
+// <span class="badge badge-${forecast.confidence>70?'success':forecast.confidence>50?'medium':'high'}">${forecast.confidence}% Confidence</span>
+// </div>
+// ${perfIndicator}
+// <div class="info-grid" style="grid-template-columns:repeat(4,1fr);margin:1rem 0">
+// <div class="info-item">
+// <div class="info-label">Model Type</div>
+// <div class="info-value" style="font-size:1rem;text-transform:uppercase">${forecast.model_type}</div>
+// </div>
+// <div class="info-item">
+// <div class="info-label">Trend Direction</div>
+// <div class="info-value" style="font-size:1rem;color:${forecast.trend==='increasing'?'#27ae60':forecast.trend==='decreasing'?'#e74c3c':'#3498db'}">${forecast.trend.toUpperCase()}</div>
+// </div>
+// <div class="info-item">
+// <div class="info-label">Avg Daily Demand</div>
+// <div class="info-value">${forecast.avg_daily_demand}</div>
+// </div>
+// <div class="info-item">
+// <div class="info-label">Reliability Score</div>
+// <div class="info-value">${forecast.reliability_score}%</div>
+// </div>
+// <div class="info-item">
+// <div class="info-label">R² Score</div>
+// <div class="info-value">${forecast.r2_score}</div>
+// </div>
+// <div class="info-item">
+// <div class="info-label">Std Error</div>
+// <div class="info-value">±${forecast.std_error}</div>
+// </div>
+// <div class="info-item">
+// <div class="info-label">7-Day MA</div>
+// <div class="info-value">${forecast.ma_7}</div>
+// </div>
+// <div class="info-item">
+// <div class="info-label">30-Day MA</div>
+// <div class="info-value">${forecast.ma_30}</div>
+// </div>
+// </div>
+// <div style="background:#f8f9fa;padding:1rem;border-radius:6px;margin:1rem 0">
+// <strong>Prediction Interval:</strong> ${forecast.prediction_interval} confidence band shown below (shaded area)
+// </div>
+// <div id="forecastChart" style="height:350px"></div>
+// </div>`;
+// }
 
 let reorderInfo='';
-if(reorder && !reorder.error){
-reorderInfo=`
-<div class="forecast-section">
-<div class="forecast-header">💡 AI-Powered Reorder Recommendation</div>
-<div class="info-grid" style="grid-template-columns:repeat(3,1fr)">
-<div class="info-item" style="border-left-color:${reorder.urgency==='critical'?'#e74c3c':reorder.urgency==='high'?'#f39c12':'#27ae60'}">
-<div class="info-label">Urgency Level</div>
-<div class="info-value" style="text-transform:uppercase;color:${reorder.urgency==='critical'?'#e74c3c':reorder.urgency==='high'?'#f39c12':'#27ae60'}">${reorder.urgency}</div>
-</div>
-<div class="info-item">
-<div class="info-label">Days Until Stockout</div>
-<div class="info-value" style="color:${reorder.days_until_stockout<7?'#e74c3c':reorder.days_until_stockout<14?'#f39c12':'#27ae60'}">${reorder.days_until_stockout}</div>
-</div>
-<div class="info-item">
-<div class="info-label">Recommended Qty</div>
-<div class="info-value">${reorder.recommended_order_qty} units</div>
-</div>
-<div class="info-item">
-<div class="info-label">Safety Stock Buffer</div>
-<div class="info-value">${reorder.safety_stock} units</div>
-</div>
-<div class="info-item">
-<div class="info-label">Estimated Cost</div>
-<div class="info-value">₹${reorder.estimated_cost.toLocaleString()}</div>
-</div>
-<div class="info-item">
-<div class="info-label">Forecast Confidence</div>
-<div class="info-value">${reorder.forecast_confidence}%</div>
-</div>
-<div class="info-item">
-<div class="info-label">Lead Time</div>
-<div class="info-value">${reorder.lead_time_days} days</div>
-</div>
-<div class="info-item">
-<div class="info-label">Variability Buffer</div>
-<div class="info-value">±${reorder.variability_buffer} days</div>
-</div>
-<div class="info-item">
-<div class="info-label">Decision Mode</div>
-<div class="info-value" style="text-transform:uppercase">${reorder.decision_mode}</div>
-</div>
-</div>
-<div style="background:#e8f5e9;padding:1rem;border-radius:6px;border-left:3px solid #27ae60;margin-top:1rem">
-<strong>🛡️ Safety Net:</strong> ${reorder.confidence_explanation}
-</div>
-</div>`;
-}
+// if(reorder && !reorder.error){
+// reorderInfo=`
+// <div class="forecast-section">
+// <div class="forecast-header">💡 AI-Powered Reorder Recommendation</div>
+// <div class="info-grid" style="grid-template-columns:repeat(3,1fr)">
+// <div class="info-item" style="border-left-color:${reorder.urgency==='critical'?'#e74c3c':reorder.urgency==='high'?'#f39c12':'#27ae60'}">
+// <div class="info-label">Urgency Level</div>
+// <div class="info-value" style="text-transform:uppercase;color:${reorder.urgency==='critical'?'#e74c3c':reorder.urgency==='high'?'#f39c12':'#27ae60'}">${reorder.urgency}</div>
+// </div>
+// <div class="info-item">
+// <div class="info-label">Days Until Stockout</div>
+// <div class="info-value" style="color:${reorder.days_until_stockout<7?'#e74c3c':reorder.days_until_stockout<14?'#f39c12':'#27ae60'}">${reorder.days_until_stockout}</div>
+// </div>
+// <div class="info-item">
+// <div class="info-label">Recommended Qty</div>
+// <div class="info-value">${reorder.recommended_order_qty} units</div>
+// </div>
+// <div class="info-item">
+// <div class="info-label">Safety Stock Buffer</div>
+// <div class="info-value">${reorder.safety_stock} units</div>
+// </div>
+// <div class="info-item">
+// <div class="info-label">Estimated Cost</div>
+// <div class="info-value">₹${reorder.estimated_cost.toLocaleString()}</div>
+// </div>
+// <div class="info-item">
+// <div class="info-label">Forecast Confidence</div>
+// <div class="info-value">${reorder.forecast_confidence}%</div>
+// </div>
+// <div class="info-item">
+// <div class="info-label">Lead Time</div>
+// <div class="info-value">${reorder.lead_time_days} days</div>
+// </div>
+// <div class="info-item">
+// <div class="info-label">Variability Buffer</div>
+// <div class="info-value">±${reorder.variability_buffer} days</div>
+// </div>
+// <div class="info-item">
+// <div class="info-label">Decision Mode</div>
+// <div class="info-value" style="text-transform:uppercase">${reorder.decision_mode}</div>
+// </div>
+// </div>
+// <div style="background:#e8f5e9;padding:1rem;border-radius:6px;border-left:3px solid #27ae60;margin-top:1rem">
+// <strong>🛡️ Safety Net:</strong> ${reorder.confidence_explanation}
+// </div>
+// </div>`;
+// }
 
 let performanceSection='';
-if(perf && !perf.error && perf.recent_misses && perf.recent_misses.length>0){
-performanceSection=`
-<div class="forecast-section">
-<div class="forecast-header">📈 Recent Forecast Performance</div>
-<div class="info-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:1rem">
-<div class="info-item">
-<div class="info-label">Accuracy (30 Days)</div>
-<div class="info-value">${perf.accuracy_pct}%</div>
-</div>
-<div class="info-item">
-<div class="info-label">Correct Predictions</div>
-<div class="info-value">${perf.correct_predictions}/${perf.predictions_tracked}</div>
-</div>
-<div class="info-item">
-<div class="info-label">Error Trend</div>
-<div class="info-value" style="text-transform:uppercase;color:${perf.error_trend==='improving'?'#27ae60':'#f39c12'}">${perf.error_trend}</div>
-</div>
-</div>
-<div style="background:#fff3cd;padding:1rem;border-radius:6px;border-left:3px solid #f39c12">
-<strong>⚠️ Recent Misses:</strong>
-${perf.recent_misses.map(m=>`<div style="margin-top:0.5rem">• ${m.date}: Predicted ${m.predicted}, Actual ${m.actual} (${m.error_pct}% error)</div>`).join('')}
-</div>
-</div>`;
-}
+// if(perf && !perf.error && perf.recent_misses && perf.recent_misses.length>0){
+// performanceSection=`
+// <div class="forecast-section">
+// <div class="forecast-header">📈 Recent Forecast Performance</div>
+// <div class="info-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:1rem">
+// <div class="info-item">
+// <div class="info-label">Accuracy (30 Days)</div>
+// <div class="info-value">${perf.accuracy_pct}%</div>
+// </div>
+// <div class="info-item">
+// <div class="info-label">Correct Predictions</div>
+// <div class="info-value">${perf.correct_predictions}/${perf.predictions_tracked}</div>
+// </div>
+// <div class="info-item">
+// <div class="info-label">Error Trend</div>
+// <div class="info-value" style="text-transform:uppercase;color:${perf.error_trend==='improving'?'#27ae60':'#f39c12'}">${perf.error_trend}</div>
+// </div>
+// </div>
+// <div style="background:#fff3cd;padding:1rem;border-radius:6px;border-left:3px solid #f39c12">
+// <strong>⚠️ Recent Misses:</strong>
+// ${perf.recent_misses.map(m=>`<div style="margin-top:0.5rem">• ${m.date}: Predicted ${m.predicted}, Actual ${m.actual} (${m.error_pct}% error)</div>`).join('')}
+// </div>
+// </div>`;
+// }
 
 document.getElementById('modalBody').innerHTML=`
 <div class="info-grid" style="grid-template-columns:repeat(2,1fr)">
 <div class="info-item"><div class="info-label">Category</div><div class="info-value">${p.category}</div></div>
-<div class="info-item"><div class="info-label">Current Stock</div><div class="info-value" style="color:${p.current_stock<=p.reorder_point?'#e74c3c':'#27ae60'}">${p.current_stock} units</div></div>
-<div class="info-item"><div class="info-label">Reorder Point</div><div class="info-value">${p.reorder_point} units</div></div>
-<div class="info-item"><div class="info-label">Unit Cost</div><div class="info-value">₹${p.unit_cost}</div></div>
-<div class="info-item"><div class="info-label">EOQ (Economic Order Qty)</div><div class="info-value">${eoq.eoq} units</div></div>
-<div class="info-item"><div class="info-label">Est. Annual Demand</div><div class="info-value">${eoq.annual_demand} units</div></div>
+
+<div class="info-item">
+<div class="info-label">Current Stock</div>
+<div class="info-value" style="color:${p.current_stock<=p.reorder_point?'#e74c3c':'#27ae60'}">
+${p.current_stock} units
 </div>
+</div>
+
+<div class="info-item">
+<div class="info-label">Reorder Point</div>
+<div class="info-value">${p.reorder_point} units</div>
+</div>
+
+<div class="info-item">
+<div class="info-label">Unit Cost</div>
+<div class="info-value">₹${p.unit_cost}</div>
+</div>
+
+<div class="info-item">
+<div class="info-label">EOQ (Economic Order Qty)</div>
+<div class="info-value">${eoq.eoq} units</div>
+</div>
+
+<div class="info-item">
+<div class="info-label">Est. Annual Demand</div>
+<div class="info-value">${eoq.annual_demand} units</div>
+</div>
+</div>
+
 ${reorderInfo}
 ${forecastChart}
 ${performanceSection}
+
 <div style="display:flex;gap:1rem;margin-top:1.5rem">
-<button class="btn btn-success" style="flex:1" onclick="closeModal('productModal');adjustStock(${p.id},${p.current_stock},'${p.name}')">📦 Adjust Stock</button>
-<button class="btn btn-warning" style="flex:1" onclick="closeModal('productModal');autoReorder(${p.id},'${p.name}')">🔄 Auto Reorder</button>
-<button class="btn btn-danger" style="flex:1" onclick="deleteProduct(${p.id},'${p.name}')">🗑️ Delete</button>
+<button class="btn btn-primary" style="flex:1"
+onclick="loadForecast(${p.id})">
+🤖 Generate Forecast
+</button>
+
+<button class="btn btn-info" style="flex:1"
+onclick="loadAIInsights(${p.id})">
+📊 AI Insights
+</button>
+</div>
+
+<div style="display:flex;gap:1rem;margin-top:1rem">
+<button class="btn btn-success" style="flex:1"
+onclick="closeModal('productModal');adjustStock(${p.id},${p.current_stock},'${p.name}')">
+📦 Adjust Stock
+</button>
+
+<button class="btn btn-warning" style="flex:1"
+onclick="closeModal('productModal');autoReorder(${p.id},'${p.name}')">
+🔄 Auto Reorder
+</button>
+
+<button class="btn btn-danger" style="flex:1"
+onclick="deleteProduct(${p.id},'${p.name}')">
+🗑️ Delete
+</button>
 </div>`;
 
 showModal('productModal');
 
-if(forecast.forecast && forecast.forecast.length>0){
-const dates=forecast.forecast.map(f=>f.date);
-const demands=forecast.forecast.map(f=>f.forecasted_demand);
-const lowerBounds=forecast.forecast.map(f=>f.lower_bound);
-const upperBounds=forecast.forecast.map(f=>f.upper_bound);
+// if(forecast.forecast && forecast.forecast.length>0){
+// const dates=forecast.forecast.map(f=>f.date);
+// const demands=forecast.forecast.map(f=>f.forecasted_demand);
+// const lowerBounds=forecast.forecast.map(f=>f.lower_bound);
+// const upperBounds=forecast.forecast.map(f=>f.upper_bound);
 
-const lowerTrace={x:dates,y:lowerBounds,name:'Lower Bound',
-line:{color:'rgba(102,126,234,0.3)',width:1,dash:'dot'},
-fill:'none',showlegend:false,hoverinfo:'skip'};
+// const lowerTrace={x:dates,y:lowerBounds,name:'Lower Bound',
+// line:{color:'rgba(102,126,234,0.3)',width:1,dash:'dot'},
+// fill:'none',showlegend:false,hoverinfo:'skip'};
 
-const upperTrace={x:dates,y:upperBounds,name:'Upper Bound',
-line:{color:'rgba(102,126,234,0.3)',width:1,dash:'dot'},
-fill:'tonexty',fillcolor:'rgba(102,126,234,0.15)',
-showlegend:false,hoverinfo:'skip'};
+// const upperTrace={x:dates,y:upperBounds,name:'Upper Bound',
+// line:{color:'rgba(102,126,234,0.3)',width:1,dash:'dot'},
+// fill:'tonexty',fillcolor:'rgba(102,126,234,0.15)',
+// showlegend:false,hoverinfo:'skip'};
 
-const forecastTrace={x:dates,y:demands,type:'scatter',mode:'lines+markers',name:'Forecast',
-line:{color:'#667eea',width:3},marker:{size:6,color:'#764ba2'},
-hovertemplate:'<b>%{x}</b><br>Demand: %{y:.1f} units<extra></extra>'};
+// const forecastTrace={x:dates,y:demands,type:'scatter',mode:'lines+markers',name:'Forecast',
+// line:{color:'#667eea',width:3},marker:{size:6,color:'#764ba2'},
+// hovertemplate:'<b>%{x}</b><br>Demand: %{y:.1f} units<extra></extra>'};
 
-const layout={xaxis:{title:'Date',gridcolor:'#ecf0f1'},
-yaxis:{title:'Forecasted Demand (units)',gridcolor:'#ecf0f1'},
-plot_bgcolor:'#f8f9fa',paper_bgcolor:'white',
-margin:{l:60,r:20,t:20,b:60},height:350,
-showlegend:true,legend:{x:0.02,y:0.98}};
+// const layout={xaxis:{title:'Date',gridcolor:'#ecf0f1'},
+// yaxis:{title:'Forecasted Demand (units)',gridcolor:'#ecf0f1'},
+// plot_bgcolor:'#f8f9fa',paper_bgcolor:'white',
+// margin:{l:60,r:20,t:20,b:60},height:350,
+// showlegend:true,legend:{x:0.02,y:0.98}};
 
-Plotly.newPlot('forecastChart',[lowerTrace,upperTrace,forecastTrace],layout,{responsive:true,displayModeBar:false});
-}
+// Plotly.newPlot('forecastChart',[lowerTrace,upperTrace,forecastTrace],layout,{responsive:true,displayModeBar:false});
+// }
 }catch(e){console.error(e);showToast('Error loading product details','error')}
+}
+
+
+async function loadForecast(id){
+
+if(document.getElementById('forecastLoaded')){
+showToast('Forecast already loaded','success');
+return;
+}
+
+showToast('Generating AI Forecast...','success');
+
+try{
+
+const forecastR = await fetch(`/api/forecast/${id}`);
+const forecast = await forecastR.json();
+
+if(forecast.error){
+showToast('Failed to load forecast','error');
+return;
+}
+
+let forecastHTML = `
+<div id="forecastLoaded" class="forecast-section" style="margin-top:1.5rem">
+
+<div class="forecast-header">
+🤖 ML-Powered 30-Day Demand Forecast
+</div>
+
+<div class="info-grid" style="grid-template-columns:repeat(3,1fr);margin-top:1rem">
+
+<div class="info-item">
+<div class="info-label">Model Type</div>
+<div class="info-value">${forecast.model_type}</div>
+</div>
+
+<div class="info-item">
+<div class="info-label">Confidence</div>
+<div class="info-value">${forecast.confidence}%</div>
+</div>
+
+<div class="info-item">
+<div class="info-label">Trend</div>
+<div class="info-value">${forecast.trend}</div>
+</div>
+
+<div class="info-item">
+<div class="info-label">Avg Daily Demand</div>
+<div class="info-value">${forecast.avg_daily_demand}</div>
+</div>
+
+<div class="info-item">
+<div class="info-label">R² Score</div>
+<div class="info-value">${forecast.r2_score}</div>
+</div>
+
+<div class="info-item">
+<div class="info-label">Std Error</div>
+<div class="info-value">±${forecast.std_error}</div>
+</div>
+
+</div>
+</div>
+`;
+
+document.getElementById('modalBody').innerHTML += forecastHTML;
+
+if(forecast.forecast && forecast.forecast.length>0){
+
+const dates = forecast.forecast.map(f=>f.date);
+const demands = forecast.forecast.map(f=>f.forecasted_demand);
+
+const forecastTrace = {
+x: dates,
+y: demands,
+type:'scatter',
+mode:'lines+markers',
+name:'Forecast',
+line:{width:3},
+marker:{size:6}
+};
+
+const layout = {
+xaxis:{title:'Date'},
+yaxis:{title:'Forecasted Demand'},
+height:350,
+margin:{l:50,r:20,t:20,b:50}
+};
+
+const chartDiv = document.createElement('div');
+chartDiv.id = 'forecastChart';
+chartDiv.style.height = '350px';
+chartDiv.style.marginTop = '1rem';
+
+document.getElementById('forecastLoaded').appendChild(chartDiv);
+
+Plotly.newPlot(
+'forecastChart',
+[forecastTrace],
+layout,
+{responsive:true,displayModeBar:false}
+);
+
+}
+
+showToast('Forecast generated successfully','success');
+
+}catch(e){
+console.error(e);
+showToast('Error generating forecast','error');
+}
+}
+
+async function loadAIInsights(id){
+
+if(document.getElementById('insightsLoaded')){
+showToast('AI Insights already loaded','success');
+return;
+}
+
+showToast('Loading AI Insights...','success');
+
+try{
+
+const [
+reorderR,
+perfR
+] = await Promise.all([
+fetch(`/api/reorder-recommendation/${id}`),
+fetch(`/api/model-performance/${id}`)
+]);
+
+const reorder = await reorderR.json();
+const perf = await perfR.json();
+
+let insightsHTML = `
+<div id="insightsLoaded" class="forecast-section" style="margin-top:1.5rem">
+
+<div class="forecast-header">
+📊 AI Insights
+</div>
+
+<div class="info-grid" style="grid-template-columns:repeat(3,1fr);margin-top:1rem">
+
+<div class="info-item">
+<div class="info-label">Urgency</div>
+<div class="info-value">${reorder.urgency}</div>
+</div>
+
+<div class="info-item">
+<div class="info-label">Recommended Qty</div>
+<div class="info-value">${reorder.recommended_order_qty}</div>
+</div>
+
+<div class="info-item">
+<div class="info-label">Forecast Confidence</div>
+<div class="info-value">${reorder.forecast_confidence}%</div>
+</div>
+
+<div class="info-item">
+<div class="info-label">Lead Time</div>
+<div class="info-value">${reorder.lead_time_days} days</div>
+</div>
+
+<div class="info-item">
+<div class="info-label">Accuracy</div>
+<div class="info-value">${perf.accuracy_pct}%</div>
+</div>
+
+<div class="info-item">
+<div class="info-label">Error Trend</div>
+<div class="info-value">${perf.error_trend}</div>
+</div>
+
+</div>
+
+<div style="background:#f8f9fa;padding:1rem;border-radius:6px;margin-top:1rem">
+<strong>🛡️ AI Recommendation:</strong>
+${reorder.confidence_explanation}
+</div>
+
+</div>
+`;
+
+document.getElementById('modalBody').innerHTML += insightsHTML;
+
+showToast('AI Insights loaded successfully','success');
+
+}catch(e){
+console.error(e);
+showToast('Error loading AI Insights','error');
+}
 }
 
 async function adjustStock(id,currentStock,name){
@@ -1504,12 +1881,26 @@ function showProducts(){document.getElementById('productsContainer').scrollIntoV
 function showLowStock(){loadProducts();setTimeout(()=>document.getElementById('productsContainer').scrollIntoView({behavior:'smooth'}),100)}
 function showAlerts(){document.getElementById('alertsContainer').scrollIntoView({behavior:'smooth'})}
 function showOrders(){document.getElementById('ordersContainer').scrollIntoView({behavior:'smooth'})}
-
 document.addEventListener('DOMContentLoaded',()=>{
-loadStats();loadAlerts();loadProducts();loadSuppliers();loadOrders();
-setInterval(()=>{loadStats();loadAlerts();},30000);
-});
 
+loadStats();
+loadAlerts();
+loadProducts();
+loadSuppliers();
+loadOrders();
+
+setInterval(()=>{
+
+loadStats();
+loadAlerts();
+loadProducts();
+loadOrders();
+
+showToast('Dashboard auto-refreshed','success');
+
+},30000);
+
+});
 // ── CSV Import ──────────────────────────────────────────────
 function triggerCSVImport(){
   document.getElementById('csvFileInput').value='';
@@ -2150,4 +2541,4 @@ if __name__ == '__main__':
     print("\n🎯 READY FOR E-SUMMIT 2025!")
     print("=" * 80)
 
-    app.run(debug=FALSE, use_reloader=False, host='0.0.0.0', port=5000)
+    app.run(debug=False, use_reloader=False, host='0.0.0.0', port=5000)
