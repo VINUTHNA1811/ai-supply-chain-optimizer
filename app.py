@@ -983,6 +983,164 @@ border-left-color:#27ae60;
 0%{transform:rotate(0deg);}
 100%{transform:rotate(360deg);}
 }
+
+.skeleton{
+position:relative;
+overflow:hidden;
+background:#e2e8f0;
+border-radius:10px;
+}
+
+.skeleton::before{
+content:'';
+position:absolute;
+top:0;
+left:-150px;
+height:100%;
+width:150px;
+background:linear-gradient(
+90deg,
+transparent,
+rgba(255,255,255,0.6),
+transparent
+);
+animation:skeleton-loading 1.2s infinite;
+}
+
+@keyframes skeleton-loading{
+0%{left:-150px;}
+100%{left:100%;}
+}
+
+.skeleton-title{
+height:35px;
+width:40%;
+margin-bottom:25px;
+}
+
+.skeleton-grid{
+display:grid;
+grid-template-columns:repeat(2,1fr);
+gap:1rem;
+margin-bottom:1.5rem;
+}
+
+.skeleton-card{
+height:90px;
+}
+
+.skeleton-chart{
+height:250px;
+margin-top:1rem;
+margin-bottom:1.5rem;
+}
+
+.skeleton-btn{
+height:50px;
+flex:1;
+}
+body.dark-mode{
+background:#121212;
+color:#ecf0f1;
+}
+
+body.dark-mode .header{
+background:linear-gradient(135deg,#1e272e,#2f3640);
+}
+
+body.dark-mode .stat-card{
+background:#1f2937;
+color:#ecf0f1;
+box-shadow:0 8px 24px rgba(0,0,0,0.4);
+}
+
+body.dark-mode .stat-label,
+body.dark-mode .stat-sublabel,
+body.dark-mode .info-label{
+color:#dcdde1;
+}
+
+body.dark-mode .info-item,
+body.dark-mode .forecast-section,
+body.dark-mode .modal-content{
+background:#1f2937;
+color:#ecf0f1;
+}
+
+body.dark-mode table{
+background:#1f2937;
+color:#ecf0f1;
+}
+
+body.dark-mode th{
+background:#2f3640;
+}
+
+body.dark-mode td{
+border-color:#353b48;
+}
+
+body.dark-mode #lastUpdated{
+color:#dcdde1;
+}
+
+body.dark-mode h1,
+body.dark-mode h2,
+body.dark-mode h3,
+body.dark-mode .stat-value,
+body.dark-mode .info-value,
+body.dark-mode .modal-title{
+color:#f5f6fa !important;
+}
+
+body.dark-mode p{
+color:#dcdde1;
+}
+
+body.dark-mode .modal-header{
+border-bottom:1px solid #485460;
+}
+
+body.dark-mode .forecast-header{
+color:#ffffff;
+}
+body.dark-mode .toast{
+background:#2f3640 !important;
+color:#f5f6fa !important;
+box-shadow:0 8px 24px rgba(0,0,0,0.4);
+border-left:4px solid #00a8ff;
+}
+
+body.dark-mode .alert-card{
+background:#1f2937 !important;
+color:#f5f6fa !important;
+border-color:#485460 !important;
+}
+
+body.dark-mode .alert-card p,
+body.dark-mode .alert-card div,
+body.dark-mode .alert-card span{
+color:#dcdde1 !important;
+}
+
+body.dark-mode #lastUpdated{
+color:#f5f6fa !important;
+opacity:0.85;
+}
+.ai-recommendation{
+background:#f8f9fa;
+padding:1rem;
+border-radius:10px;
+margin-top:1rem;
+color:#2d3436;
+font-weight:500;
+}
+
+body.dark-mode .ai-recommendation{
+background:#2d3748;
+color:#f1f5f9;
+border:1px solid #4a5568;
+}
 </style>
 </head>
 <body>
@@ -1006,6 +1164,14 @@ color:#2d3436;
 ">
 Last Synced: --
 </div>
+</div>
+
+<button
+onclick="toggleDarkMode()"
+class="btn btn-warning"
+style="height:45px">
+🌙 Dark Mode
+</button>
 
 </div>
 
@@ -1053,7 +1219,18 @@ Last Synced: --
 <div class="card-header"><span>📦 Inventory Status</span>
 <div>
 <button class="btn btn-success btn-small" onclick="showAddProduct()" style="margin-right:0.5rem">➕ Add Product</button>
-<button class="btn btn-warning btn-small" onclick="triggerCSVImport()" style="margin-right:0.5rem" title="Import demand history from CSV (format: product_name,date,quantity)">📂 Import CSV</button>
+<button class="btn btn-warning btn-small"
+onclick="triggerCSVImport()"
+style="margin-right:0.5rem"
+title="Import demand history from CSV (format: product_name,date,quantity)">
+📂 Import CSV
+</button>
+
+<button class="btn btn-success btn-small"
+onclick="exportInventoryCSV()"
+title="Export inventory report">
+📄 Export CSV
+</button>
 <input type="file" id="csvFileInput" accept=".csv" style="display:none" onchange="importDemandCSV(this)">
 <button class="btn btn-primary btn-small" onclick="loadProducts()">🔄 Refresh</button>
 </div>
@@ -1171,6 +1348,22 @@ window.requestAnimationFrame(step);
 window.requestAnimationFrame(step);
 }
 
+function toggleDarkMode(){
+document.body.classList.toggle('dark-mode');
+const btn = document.querySelector('button[onclick="toggleDarkMode()"]');
+if(document.body.classList.contains('dark-mode')){
+btn.innerHTML = '☀️ Light Mode';
+localStorage.setItem('darkMode','enabled');
+showToast('Dark Mode Enabled','success');
+}else{
+btn.innerHTML = '🌙 Dark Mode';
+localStorage.setItem('darkMode','disabled');
+showToast('Light Mode Enabled','success');
+}
+}
+
+
+
 async function loadStats(){
 try{
 
@@ -1276,37 +1469,59 @@ ${o.status==='pending'?`<button class="btn btn-danger btn-small" onclick="update
 </div>`).join('');
 }catch(e){console.error(e);showToast('Error loading orders','error')}
 }
+
+async function exportInventoryCSV(){
+try{
+const r=await fetch('/api/products');
+const products=await r.json();
+const rows=products.map(p=>
+p.name.replace(/,/g,';')+','+
+p.category+','+
+p.current_stock+','+
+p.reorder_point+','+
+p.unit_cost
+);
+const csv='Product Name,Category,Current Stock,Reorder Point,Unit Cost\\n'+rows.join('\\n');
+const blob=new Blob([csv],{type:'text/csv'});
+const url=window.URL.createObjectURL(blob);
+const a=document.createElement('a');
+a.href=url;
+a.download='inventory_'+new Date().toISOString().split('T')[0]+'.csv';
+document.body.appendChild(a);
+a.click();
+document.body.removeChild(a);
+window.URL.revokeObjectURL(url);
+showToast('✅ Inventory exported successfully');
+}catch(e){console.error(e);showToast('Error exporting inventory','error')}
+}
+
 async function viewProduct(id){
 
 document.getElementById('modalTitle').textContent = '⏳ Loading Product Analytics...';
 
 document.getElementById('modalBody').innerHTML = `
-<div style="padding:50px;text-align:center">
 
-<div style="
-width:60px;
-height:60px;
-border:6px solid #e0e7ff;
-border-top:6px solid #667eea;
-border-radius:50%;
-margin:0 auto 20px auto;
-animation:spin 1s linear infinite;
-"></div>
+<div style="padding:20px">
 
-<div style="
-font-size:20px;
-font-weight:600;
-color:#667eea;
-margin-bottom:10px;
-">
-Loading Product Analytics...
+<div class="skeleton skeleton-title"></div>
+
+<div class="skeleton-grid">
+
+<div class="skeleton skeleton-card"></div>
+<div class="skeleton skeleton-card"></div>
+<div class="skeleton skeleton-card"></div>
+<div class="skeleton skeleton-card"></div>
+
 </div>
 
-<div style="
-color:#666;
-font-size:15px;
-">
-Fetching AI Forecasts, EOQ & Inventory Insights
+<div class="skeleton skeleton-chart"></div>
+
+<div style="display:flex;gap:1rem;margin-top:1.5rem">
+
+<div class="skeleton skeleton-btn"></div>
+<div class="skeleton skeleton-btn"></div>
+<div class="skeleton skeleton-btn"></div>
+
 </div>
 
 </div>
@@ -1575,6 +1790,8 @@ showModal('productModal');
 }catch(e){console.error(e);showToast('Error loading product details','error')}
 }
 
+const forecastCache = {};
+const insightsCache = {};
 
 async function loadForecast(id){
 
@@ -1587,8 +1804,21 @@ showToast('Generating AI Forecast...','success');
 
 try{
 
+let forecast;
+
+if(forecastCache[id]){
+
+forecast = forecastCache[id];
+showToast('Loaded cached forecast','success');
+
+}else{
+
 const forecastR = await fetch(`/api/forecast/${id}`);
-const forecast = await forecastR.json();
+forecast = await forecastR.json();
+
+forecastCache[id] = forecast;
+
+}
 
 if(forecast.error){
 showToast('Failed to load forecast','error');
@@ -1697,6 +1927,17 @@ showToast('Loading AI Insights...','success');
 
 try{
 
+let reorder, perf;
+
+if(insightsCache[id]){
+
+reorder = insightsCache[id].reorder;
+perf = insightsCache[id].perf;
+
+showToast('Loaded cached AI Insights','success');
+
+}else{
+
 const [
 reorderR,
 perfR
@@ -1705,8 +1946,15 @@ fetch(`/api/reorder-recommendation/${id}`),
 fetch(`/api/model-performance/${id}`)
 ]);
 
-const reorder = await reorderR.json();
-const perf = await perfR.json();
+reorder = await reorderR.json();
+perf = await perfR.json();
+
+insightsCache[id] = {
+reorder,
+perf
+};
+
+}
 
 let insightsHTML = `
 <div id="insightsLoaded" class="forecast-section" style="margin-top:1.5rem">
@@ -1749,7 +1997,7 @@ let insightsHTML = `
 
 </div>
 
-<div style="background:#f8f9fa;padding:1rem;border-radius:6px;margin-top:1rem">
+<div class="ai-recommendation">
 <strong>🛡️ AI Recommendation:</strong>
 ${reorder.confidence_explanation}
 </div>
@@ -1882,7 +2130,17 @@ function showLowStock(){loadProducts();setTimeout(()=>document.getElementById('p
 function showAlerts(){document.getElementById('alertsContainer').scrollIntoView({behavior:'smooth'})}
 function showOrders(){document.getElementById('ordersContainer').scrollIntoView({behavior:'smooth'})}
 document.addEventListener('DOMContentLoaded',()=>{
+if(localStorage.getItem('darkMode') === 'enabled'){
 
+document.body.classList.add('dark-mode');
+
+const btn = document.querySelector('button[onclick="toggleDarkMode()"]');
+
+if(btn){
+btn.innerHTML = '☀️ Light Mode';
+}
+
+}
 loadStats();
 loadAlerts();
 loadProducts();
