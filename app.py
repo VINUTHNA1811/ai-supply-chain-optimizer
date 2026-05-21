@@ -477,9 +477,8 @@ class DemandForecaster:
         
         if not errors:
             return None
-        
         return round(sum(errors) / len(errors), 1)
-    
+
     @staticmethod
     def get_reorder_recommendation(product_id):
         """Enhanced reorder recommendation with supplier-based lead time and variability"""
@@ -1141,6 +1140,23 @@ background:#2d3748;
 color:#f1f5f9;
 border:1px solid #4a5568;
 }
+
+@media print{
+body{
+background:white !important;
+}
+.header{
+box-shadow:none; 
+}
+button,
+.btn{
+display:none !important;
+}
+.card{
+break-inside:avoid;margin-bottom:20px;
+}
+}
+
 </style>
 </head>
 <body>
@@ -1216,23 +1232,15 @@ style="height:45px">
 </div>
 
 <div class="card">
-<div class="card-header"><span>📦 Inventory Status</span>
+<div class="card-header">
+<span>📦 Inventory Status</span>
 <div>
 <button class="btn btn-success btn-small" onclick="showAddProduct()" style="margin-right:0.5rem">➕ Add Product</button>
-<button class="btn btn-warning btn-small"
-onclick="triggerCSVImport()"
-style="margin-right:0.5rem"
-title="Import demand history from CSV (format: product_name,date,quantity)">
-📂 Import CSV
-</button>
-
-<button class="btn btn-success btn-small"
-onclick="exportInventoryCSV()"
-title="Export inventory report">
-📄 Export CSV
-</button>
+<button class="btn btn-warning btn-small" onclick="triggerCSVImport()" style="margin-right:0.5rem" title="Import demand history from CSV">Import CSV</button>
+<button class="btn btn-success btn-small" onclick="exportInventoryCSV()" style="margin-right:0.5rem" title="Export inventory CSV report">Export CSV</button>
+<button class="btn btn-danger btn-small" onclick="exportInventoryPDF()" style="margin-right:0.5rem" title="Export inventory PDF report">Export PDF</button>
 <input type="file" id="csvFileInput" accept=".csv" style="display:none" onchange="importDemandCSV(this)">
-<button class="btn btn-primary btn-small" onclick="loadProducts()">🔄 Refresh</button>
+<button class="btn btn-primary btn-small" onclick="loadProducts()">Refresh</button>
 </div>
 </div>
 <div class="card-body" id="productsContainer"><div class="loading">Loading products...</div></div>
@@ -1493,6 +1501,151 @@ document.body.removeChild(a);
 window.URL.revokeObjectURL(url);
 showToast('✅ Inventory exported successfully');
 }catch(e){console.error(e);showToast('Error exporting inventory','error')}
+}
+
+async function exportInventoryPDF(){
+try{
+showToast('Generating PDF report...','success');
+const r=await fetch('/api/products');
+const products=await r.json();
+const statsR=await fetch('/api/dashboard/stats');
+const stats=await statsR.json();
+const now=new Date();
+const timestamp=now.toLocaleString('en-US',{
+weekday:'long',
+year:'numeric',
+month:'long',
+day:'numeric',
+hour:'2-digit',
+minute:'2-digit'
+});
+let totalValue=0;
+products.forEach(p=>{
+totalValue+=p.current_stock*p.unit_cost;
+});
+const lowStockCount=products.filter(p=>p.status==='low').length;
+const html=[];
+html.push('<!DOCTYPE html>');
+html.push('<html><head><meta charset="UTF-8">');
+html.push('<title>Inventory Report - '+now.toISOString().split('T')[0]+'</title>');
+html.push('<style>');
+html.push('*{margin:0;padding:0;box-sizing:border-box}');
+html.push('body{font-family:Arial,sans-serif;padding:40px;background:#fff;color:#2c3e50}');
+html.push('.report-header{text-align:center;margin-bottom:30px;border-bottom:3px solid #667eea;padding-bottom:20px}');
+html.push('.report-header h1{color:#1e3c72;font-size:28px;margin-bottom:10px}');
+html.push('.report-header .timestamp{color:#7f8c8d;font-size:14px}');
+html.push('.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;margin-bottom:30px}');
+html.push('.kpi-card{background:#f8f9fa;padding:15px;border-radius:8px;border-left:4px solid #3498db;text-align:center}');
+html.push('.kpi-card.warning{border-left-color:#f39c12}');
+html.push('.kpi-card.success{border-left-color:#27ae60}');
+html.push('.kpi-value{font-size:28px;font-weight:700;color:#2c3e50;margin-bottom:5px}');
+html.push('.kpi-label{font-size:12px;color:#7f8c8d;text-transform:uppercase;letter-spacing:0.5px}');
+html.push('.section{margin-bottom:30px}');
+html.push('.section-title{font-size:18px;font-weight:700;color:#2c3e50;margin-bottom:15px;border-bottom:2px solid #ecf0f1;padding-bottom:10px}');
+html.push('table{width:100%;border-collapse:collapse;background:#fff}');
+html.push('thead{background:#667eea;color:#fff}');
+html.push('th{padding:12px;text-align:left;font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:0.5px}');
+html.push('td{padding:12px;border-bottom:1px solid #ecf0f1;font-size:14px}');
+html.push('tbody tr:hover{background:#f8f9fa}');
+
+html.push('.status-badge{display:inline-block;padding:4px 8px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase}');
+html.push('.status-low{background:#fee;color:#e74c3c}');
+html.push('.status-normal{background:#e8f5e9;color:#27ae60}');
+html.push('.summary{background:#f8f9fa;padding:20px;border-radius:8px;margin-top:20px}');
+html.push('.summary-item{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #ecf0f1}');
+html.push('.summary-item:last-child{border-bottom:none;font-weight:700;font-size:16px}');
+html.push('.footer{text-align:center;margin-top:40px;padding-top:20px;border-top:2px solid #ecf0f1;color:#95a5a6;font-size:12px}');
+html.push('@media print{body{padding:20px}.kpi-grid{grid-template-columns:repeat(2,1fr)}}');
+html.push('</style>');
+html.push('</head><body>');
+html.push('<div class="report-header">');
+html.push('<h1>AI-Powered Supply Chain Optimizer</h1>');
+html.push('<h2 style="color:#667eea;font-size:20px;margin:10px 0">Inventory Status Report</h2>');
+html.push('<div class="timestamp">Generated on '+timestamp+'</div>');
+html.push('</div>');
+html.push('<div class="kpi-grid">');
+html.push('<div class="kpi-card">');
+html.push('<div class="kpi-value">'+stats.total_products+'</div>');
+html.push('<div class="kpi-label">Total Products</div>');
+html.push('</div>');
+html.push('<div class="kpi-card warning">');
+html.push('<div class="kpi-value">'+lowStockCount+'</div>');
+html.push('<div class="kpi-label">Low Stock Items</div>');
+html.push('</div>');
+html.push('<div class="kpi-card success">');
+html.push('<div class="kpi-value">₹'+totalValue.toLocaleString()+'</div>');
+html.push('<div class="kpi-label">Total Inventory Value</div>');
+html.push('</div>');
+html.push('<div class="kpi-card">');
+html.push('<div class="kpi-value">'+stats.pending_orders+'</div>');
+html.push('<div class="kpi-label">Pending Orders</div>');
+html.push('</div>');
+html.push('</div>');
+html.push('<div class="section">');
+html.push('<div class="section-title">Detailed Inventory Breakdown</div>');
+html.push('<table>');
+html.push('<thead>');
+html.push('<tr>');
+html.push('<th>Product Name</th>');
+html.push('<th>Category</th>');
+html.push('<th>Current Stock</th>');
+html.push('<th>Reorder Point</th>');
+html.push('<th>Unit Cost</th>');
+html.push('<th>Stock Value</th>');
+html.push('<th>Status</th>');
+html.push('</tr>');
+html.push('</thead>');
+html.push('<tbody>');
+products.forEach(p=>{
+const stockValue=(p.current_stock*p.unit_cost).toFixed(2);
+const statusClass=p.status==='low'?'status-low':'status-normal';
+const statusText=p.status==='low'?'Low Stock':'Normal';
+html.push('<tr>');
+html.push('<td><strong>'+p.name+'</strong></td>');
+html.push('<td>'+p.category+'</td>');
+html.push('<td>'+p.current_stock+'</td>');
+html.push('<td>'+p.reorder_point+'</td>');
+html.push('<td>₹'+p.unit_cost+'</td>');
+html.push('<td>₹'+stockValue+'</td>');
+html.push('<td><span class="status-badge '+statusClass+'">'+statusText+'</span></td>');
+html.push('</tr>');
+});
+html.push('</tbody>');
+html.push('</table>');
+html.push('</div>');
+html.push('<div class="summary">');
+html.push('<div class="summary-item">');
+html.push('<span>Total Products:</span>');
+html.push('<span>'+products.length+'</span>');
+html.push('</div>');
+html.push('<div class="summary-item">');
+html.push('<span>Low Stock Items:</span>');
+html.push('<span style="color:#e74c3c">'+lowStockCount+'</span>');
+html.push('</div>');
+html.push('<div class="summary-item">');
+html.push('<span>Total Inventory Value:</span>');
+html.push('<span style="color:#27ae60">₹'+totalValue.toLocaleString()+'</span>');
+html.push('</div>');
+html.push('</div>');
+html.push('<div class="footer">');
+html.push('AI-Powered Supply Chain Optimizer v2.0 <br>');
+html.push('</div>');
+html.push('</body></html>');
+const reportWindow=window.open('about:blank','_blank');
+if(!reportWindow){
+showToast('Please allow popups for PDF export','error');
+return;
+}
+reportWindow.document.write(html.join(''));
+reportWindow.document.close();
+setTimeout(()=>{
+reportWindow.print();
+},500);
+showToast('PDF report generated successfully','success');
+}catch(e){
+console.error(e);
+showToast('Error generating PDF report','error');
+}
 }
 
 async function viewProduct(id){
@@ -2762,6 +2915,7 @@ def import_demand_csv():
         "errors":   errors[:20]   # cap at 20 so response stays readable
     })
 # ── End CSV Import Route ──────────────────────────────────────
+
 # Initialize database
 init_db()
 
@@ -2795,8 +2949,6 @@ if __name__ == '__main__':
     print("   ✓ ±2 day delivery variability buffer")
     print("   ✓ Enhanced safety stock formula")
     print("\n⚡ Background monitoring active (30s interval)")
-    print("=" * 80)
-    print("\n🎯 READY FOR E-SUMMIT 2025!")
     print("=" * 80)
 
     app.run(debug=False, use_reloader=False, host='0.0.0.0', port=5000)
