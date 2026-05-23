@@ -1,4 +1,4 @@
-# AI-Powered Supply Chain & Inventory Optimization System
+# AI-Powered Supply Chain Optimizer
 
 ## Overview
 An intelligent full-stack inventory and supply chain management platform built using Flask, SQLite/PostgreSQL, JavaScript, and Machine Learning forecasting techniques.
