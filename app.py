@@ -1760,7 +1760,7 @@ def add_product():
     except Exception as e:
         conn.close()
         return jsonify({"success": False, "error": str(e)}), 400
-
+    
 
 @app.route('/api/products/<int:id>', methods=['DELETE'])
 def delete_product(id):
@@ -1768,17 +1768,25 @@ def delete_product(id):
     conn = get_db()
     c = conn.cursor()
     try:
-        for table in ('products', 'alerts', 'inventory_history',
-                      'demand_history', 'forecast_accuracy'):
-            c.execute(f'DELETE FROM {table} WHERE '
-                      f'{"id" if table == "products" else "product_id"} = %s', (id,))
+        for table in (
+            'alerts','inventory_history',
+            'demand_history','forecast_accuracy',
+            'products'
+        ):
+            c.execute(
+                f'DELETE FROM {table} WHERE '
+                f'{"id" if table == "products" else "product_id"} = %s',
+                (id,)
+            )
         conn.commit()
         conn.close()
-        return jsonify({"success": True})
+        return jsonify({
+            "success": True
+        })
     except Exception as e:
+        conn.rollback()
         conn.close()
-        return jsonify({"success": False, "error": str(e)}), 400
-
+        return jsonify({"success": False,"error": str(e)}), 400
 
 @app.route('/api/products/<int:id>/adjust', methods=['POST'])
 def adjust_stock(id):
