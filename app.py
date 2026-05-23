@@ -1302,7 +1302,7 @@ style="height:45px">
 <span>🚨 Active Alerts & Monitoring</span>
 <div style="display:flex;gap:0.5rem">
 <button class="btn btn-warning btn-small" onclick="simulateWeather()">⚡ Simulate Event</button>
-<button class="btn btn-primary btn-small" onclick="loadAlerts()">🔄 Refresh</button>
+<button class="btn btn-primary btn-small" onclick="handleRefresh(loadAlerts,'Alerts')">🔄 Refresh</button>
 </div>
 </div>
 <div class="card-body" id="alertsContainer"><div class="loading">Loading alerts...</div></div>
@@ -1317,7 +1317,7 @@ style="height:45px">
 <button class="btn btn-success btn-small" onclick="exportInventoryCSV()" style="margin-right:0.5rem" title="Export inventory CSV report">Export CSV</button>
 <button class="btn btn-danger btn-small" onclick="exportInventoryPDF()" style="margin-right:0.5rem" title="Export inventory PDF report">Export PDF</button>
 <input type="file" id="csvFileInput" accept=".csv" style="display:none" onchange="importDemandCSV(this)">
-<button class="btn btn-primary btn-small" onclick="loadProducts()">Refresh</button>
+<button class="btn btn-primary btn-small" onclick="handleRefresh(loadProducts,'Inventory')">Refresh</button>
 </div>
 </div>
 <div class="card-body" id="productsContainer"><div class="loading">Loading products...</div></div>
@@ -1327,14 +1327,14 @@ style="height:45px">
 <div class="dashboard-grid">
 <div class="card">
 <div class="card-header"><span>📊 Supplier Performance Ranking</span>
-<button class="btn btn-primary btn-small" onclick="loadSuppliers()">🔄 Refresh</button>
+<button class="btn btn-primary btn-small" onclick="handleRefresh(loadSuppliers,'Suppliers')">🔄 Refresh</button>
 </div>
 <div class="card-body"><div id="supplierChart" class="chart-container"></div></div>
 </div>
 
 <div class="card">
 <div class="card-header"><span>📋 Recent Purchase Orders</span>
-<button class="btn btn-primary btn-small" onclick="loadOrders()">🔄 Refresh</button>
+<button class="btn btn-primary btn-small" onclick="handleRefresh(loadOrders,'Orders')">🔄 Refresh</button>
 </div>
 <div class="card-body" id="ordersContainer"><div class="loading">Loading orders...</div></div>
 </div>
@@ -1344,7 +1344,7 @@ style="height:45px">
 <div class="card">
 <div class="card-header">
 <span>📊 Inventory Distribution</span>
-<button class="btn btn-primary btn-small" onclick="loadCategoryChart()">🔄 Refresh</button>
+<button class="btn btn-primary btn-small" onclick="handleRefresh(loadCategoryChart,'Category Analytics')">🔄 Refresh</button>
 </div>
 <div class="card-body" style="padding:1rem">
 <div id="categoryChart" style="width:100%;height:300px"></div>
@@ -1356,7 +1356,7 @@ style="height:45px">
 <div class="card-header">
 <span>🤖 Forecast Accuracy Analytics</span>
 <button class="btn btn-primary btn-small"
-onclick="loadForecastAccuracyChart()">
+onclick="handleRefresh(loadForecastAccuracyChart,'Forecast Analytics')">
 🔄 Refresh
 </button>
 </div>
@@ -1630,6 +1630,12 @@ document.getElementById('lastUpdated').textContent =
 console.error(e);
 showToast('Error loading stats','error');
 }
+}
+
+async function handleRefresh(callback,message){
+showToast(`Refreshing ${message}...`);
+await callback();
+showToast(`${message} refreshed successfully`);
 }
 
 async function loadAlerts(){
